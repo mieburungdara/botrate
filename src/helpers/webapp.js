@@ -18,7 +18,18 @@ function verifyWebAppInitData(initData) {
         .update(dataCheckString)
         .digest('hex');
 
-    return calculatedHash === hash;
+    if (calculatedHash !== hash) return false;
+
+    // Validasi kadaluarsa data (Replay Attack Prevention)
+    const authDate = parseInt(params.get('auth_date'));
+    const now = Math.floor(Date.now() / 1000);
+    
+    // Maksimal 24 jam (86400 detik)
+    if (isNaN(authDate) || (now - authDate) > 86400) {
+        return false;
+    }
+
+    return true;
 }
 
 function parseInitData(initData) {

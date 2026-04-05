@@ -13,12 +13,28 @@ async function handleAlbum(ctx) {
     const messageId = ctx.message.message_id;
     const caption = ctx.message.caption || '';
 
+    // Deteksi duplikat berbasis CAPTION (Jika ada teksnya)
+    if (caption) {
+        try {
+            const [rows] = await db.execute(`
+                SELECT id FROM albums 
+                WHERE user_id = ? AND caption = ? AND created_at > DATE_SUB(NOW(), INTERVAL 30 MINUTE)
+                LIMIT 1
+            `, [userId, caption]);
+            if (rows.length > 0) return; // Abaikan jika teksnya persis sama dalam 30 menit terakhir
+        } catch (e) {
+            console.error('[DuplicateCheck] Error:', e);
+        }
+    }
+
     if (!albumCache.has(mediaGroupId)) {
         albumCache.set(mediaGroupId, {
             user_id: userId,
             chat_id: chatId,
             message_ids: [],
+            media_items: [],
             caption: caption,
+            is_processed: false,
             timeout: setTimeout(async () => {
                 await processAlbum(mediaGroupId, ctx);
             }, ALBUM_TIMEOUT)
@@ -26,7 +42,40 @@ async function handleAlbum(ctx) {
     }
 
     const album = albumCache.get(mediaGroupId);
+    
+    // Abaikan pesan jika album sedang/sudah diproses
+    if (album.is_processed) return;
+    
+    // Batas 10 media per album (Limit API Telegram)
+    if (album.message_ids.length >= 10) {
+        // Jika ini media ke-11, beri peringatan satu kali
+        if (album.message_ids.length === 10) {
+            ctx.reply('⚠️ Maksimal 10 media per album. Media tambahan akan diabaikan.');
+            // Tambah dummy agar tidak kirim reply berulang untuk pesan ke 12, 13 dst
+            album.message_ids.push('LIMIT_EXCEEDED'); 
+        }
+        return;
+    }
+
     album.message_ids.push(messageId);
+
+    // Ambil file_id dan type untuk sendMediaGroup nantinya
+    let type = '';
+    let fileId = '';
+    if (ctx.message.photo) {
+        type = 'photo';
+        fileId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
+    } else if (ctx.message.video) {
+        type = 'video';
+        fileId = ctx.message.video.file_id;
+    } else if (ctx.message.document) {
+        type = 'document';
+        fileId = ctx.message.document.file_id;
+    }
+
+    if (type && fileId) {
+        album.media_items.push({ type, media: fileId });
+    }
     
     if (caption && !album.caption) {
         album.caption = caption;
@@ -40,19 +89,33 @@ async function handleAlbum(ctx) {
 
 async function processAlbum(mediaGroupId, ctx) {
     const album = albumCache.get(mediaGroupId);
-    if (!album) return;
+    if (!album || album.is_processed) return;
     
-    albumCache.delete(mediaGroupId);
-    clearTimeout(album.timeout);
-
     try {
+        // Tandai sebagai sedang diproses
+        album.is_processed = true;
+        if (album.timeout) clearTimeout(album.timeout);
+
+        // Hapus cache fisik setelah 30 detik (agar mediaGroupId tidak bisa dipakai lagi dalam waktu dekat)
+        setTimeout(() => {
+            albumCache.delete(mediaGroupId);
+        }, 30000);
+
         const token = generateToken();
         
         // Simpan album ke database
         const [result] = await db.execute(`
-            INSERT INTO albums (user_id, message_ids, chat_id, caption, unique_token)
-            VALUES (?, ?, ?, ?, ?)
-        `, [album.user_id, JSON.stringify(album.message_ids), album.chat_id, album.caption, token]);
+            INSERT INTO albums (user_id, media_group_id, message_ids, media_items, chat_id, caption, unique_token)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        `, [
+            album.user_id, 
+            mediaGroupId,
+            JSON.stringify(album.message_ids), 
+            JSON.stringify(album.media_items),
+            album.chat_id, 
+            album.caption, 
+            token
+        ]);
 
         // Update counter user
         await db.execute(
@@ -67,26 +130,35 @@ async function processAlbum(mediaGroupId, ctx) {
         );
         const user = userRows[0];
 
-        // Kirim ke channel moderator
+        // Sisipkan caption pada media pertama agar moderator bisa melihat langsung di album
+        const mediaForModerator = [...album.media_items];
+        if (album.caption) {
+            mediaForModerator[0].caption = album.caption;
+        }
+
+        // Kirim Media Group ke channel moderator (ambil res untuk menyimpan IDs)
+        const moderatorMediaMsgs = await ctx.telegram.sendMediaGroup(
+            process.env.MODERATOR_CHANNEL_ID,
+            mediaForModerator
+        );
+        const moderatorMediaIds = moderatorMediaMsgs.map(m => m.message_id);
+
+        // Kirim Tombol Moderasi (Pesan Teks Terpisah - Opsi B)
         const keyboard = Markup.inlineKeyboard([
             Markup.button.callback('✅ Setuju', `approve_${result.insertId}`),
             Markup.button.callback('❌ Tolak', `reject_${result.insertId}`)
         ]);
 
-        const moderatorMessage = await ctx.telegram.copyMessages(
+        const moderatorMessage = await ctx.telegram.sendMessage(
             process.env.MODERATOR_CHANNEL_ID,
-            album.chat_id,
-            album.message_ids,
-            {
-                caption: `📥 Album baru dari: ${user.first_name} ${user.username ? `(@${user.username})` : ''}\nID: ${album.user_id}\n\n${album.caption}`,
-                reply_markup: keyboard.reply_markup
-            }
+            `📥 Album baru dari: ${user.first_name} ${user.username ? `(@${user.username})` : ''}\nID: ${album.user_id}\n\n${album.caption}`,
+            keyboard
         );
 
-        // Simpan message_id moderator
+        // Simpan message_id moderator (teks & media ids)
         await db.execute(
-            'UPDATE albums SET moderator_message_id = ? WHERE id = ?',
-            [moderatorMessage.message_id, result.insertId]
+            'UPDATE albums SET moderator_message_id = ?, moderator_media_ids = ? WHERE id = ?',
+            [moderatorMessage.message_id, JSON.stringify(moderatorMediaIds), result.insertId]
         );
 
         await ctx.reply('✅ Album telah dikirim untuk moderasi. Anda akan mendapatkan notifikasi ketika album disetujui atau ditolak.');
@@ -103,14 +175,46 @@ async function handleSingleMedia(ctx) {
     const messageId = ctx.message.message_id;
     const caption = ctx.message.caption || '';
 
+    // Deteksi duplikat sederhana
+    if (caption) {
+        try {
+            const [rows] = await db.execute(`
+                SELECT id FROM albums 
+                WHERE user_id = ? AND caption = ? AND created_at > DATE_SUB(NOW(), INTERVAL 30 MINUTE)
+                LIMIT 1
+            `, [userId, caption]);
+            if (rows.length > 0) {
+                return ctx.reply('⚠️ Anda sudah mengirimkan media ini sebelumnya. Mohon tunggu proses moderasi.');
+            }
+        } catch (e) {
+            console.error('[DuplicateCheck] Error:', e);
+        }
+    }
+
     try {
         const token = generateToken();
         
+        // Tentukan tipe media
+        let type = 'photo';
+        let fileId = '';
+        if (ctx.message.photo) {
+            type = 'photo';
+            fileId = ctx.message.photo[ctx.message.photo.length - 1].file_id;
+        } else if (ctx.message.video) {
+            type = 'video';
+            fileId = ctx.message.video.file_id;
+        } else if (ctx.message.document) {
+            type = 'document';
+            fileId = ctx.message.document.file_id;
+        }
+
+        const mediaItems = [{ type, media: fileId }];
+
         // Simpan media tunggal ke database
         const [result] = await db.execute(`
-            INSERT INTO albums (user_id, message_ids, chat_id, caption, unique_token)
-            VALUES (?, ?, ?, ?, ?)
-        `, [userId, JSON.stringify([messageId]), chatId, caption, token]);
+            INSERT INTO albums (user_id, media_group_id, message_ids, media_items, chat_id, caption, unique_token)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        `, [userId, null, JSON.stringify([messageId]), JSON.stringify(mediaItems), chatId, caption, token]);
 
         // Update counter user
         await db.execute(
