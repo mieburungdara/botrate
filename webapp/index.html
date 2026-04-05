@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Media Bot Dashboard</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>📱 Dashboard</h1>
+            <div id="userInfo" class="user-info"></div>
+        </header>
+
+        <section class="stats">
+            <div class="stat-card">
+                <div class="stat-value" id="totalAlbums">0</div>
+                <div class="stat-label">Album Dikirim</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="approvedAlbums">0</div>
+                <div class="stat-label">Disetujui</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="totalDownloads">0</div>
+                <div class="stat-label">Total Unduhan</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="avgRating">0.0</div>
+                <div class="stat-label">Rata-rata Rating</div>
+            </div>
+        </section>
+
+        <nav class="tabs">
+            <button class="tab-btn active" data-tab="albums">📁 Album Saya</button>
+            <button class="tab-btn" data-tab="stats">📊 Statistik</button>
+        </nav>
+
+        <section id="albumsTab" class="tab-content active">
+            <h2>Daftar Album</h2>
+            <div id="albumsList" class="albums-list"></div>
+        </section>
+
+        <section id="statsTab" class="tab-content">
+            <h2>Statistik Detail</h2>
+            <div id="statsContent"></div>
+        </section>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
