@@ -1,6 +1,11 @@
 const { Telegraf } = require('telegraf');
 require('dotenv').config();
 
+// Validate BOT_TOKEN is set for security
+if (!process.env.BOT_TOKEN) {
+    throw new Error('BOT_TOKEN environment variable is required');
+}
+
 const bot = new Telegraf(process.env.BOT_TOKEN, {
     telegram: { webhookReply: true }
 });
