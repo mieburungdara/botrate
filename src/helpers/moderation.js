@@ -172,7 +172,7 @@ async function submitToModeration(albumId) {
 
     } catch (error) {
         if (connection) await connection.rollback();
-        console.error('[SubmitToModeration] CrITICAL SUCCESS REVERSAL:', error);
+        console.error('[SubmitToModeration] Error:', error);
         return { success: false, error: 'Gagal sistem: ' + (error.message || 'Unknown Error') };
     } finally {
         if (connection) connection.release();

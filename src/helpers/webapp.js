@@ -31,8 +31,13 @@ function verifyWebAppInitData(initData) {
             .map(([key, value]) => `${key}=${value}`)
             .join('\n');
 
+        // Validate BOT_TOKEN is set for security
+        if (!process.env.BOT_TOKEN) {
+            throw new Error('BOT_TOKEN environment variable is required for webapp validation');
+        }
+        
         const secretKey = crypto.createHmac('sha256', 'WebAppData')
-            .update(process.env.BOT_TOKEN || '')
+            .update(process.env.BOT_TOKEN)
             .digest();
 
         const calculatedHash = crypto.createHmac('sha256', secretKey)

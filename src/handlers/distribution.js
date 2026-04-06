@@ -184,23 +184,27 @@ async function handleRating(ctx) {
                 WHERE id = ?
             `, [rating, rating, albumId]);
 
-            // Sync ke Channel (Tampilkan statistik terbaru)
-            if (album.channel_message_id) {
-                const [updated] = await db.execute('SELECT rating_avg, rating_count, download_count FROM albums WHERE id = ?', [albumId]);
-                const s = updated[0];
-                const botUsername = ctx.botInfo?.username || process.env.BOT_USERNAME.replace('@', '');
-                const link = `https://t.me/${botUsername}?start=${album.unique_token}`;
-                
-                try {
-                    await ctx.telegram.editMessageText(
-                        process.env.PUBLIC_CHANNEL_ID,
-                        album.channel_message_id,
-                        null,
-                        `📢 Media Baru Tersedia!\n\n⭐ Rating: ${s.rating_avg} (${s.rating_count} rating)\n📥 Jumlah unduhan: ${s.download_count || 0}\n\nKlik link untuk mendapatkan media:\n${link}`,
-                        Markup.inlineKeyboard([Markup.button.url('📥 Dapatkan Media', link)])
-                    ).catch(() => {}); // Abaikan jika konten sama (identical)
-                } catch (e) {}
+        // Sync ke Channel (Tampilkan statistik terbaru)
+        if (album.channel_message_id && process.env.PUBLIC_CHANNEL_ID) {
+            const [updated] = await db.execute('SELECT rating_avg, rating_count, download_count FROM albums WHERE id = ?', [albumId]);
+            const s = updated[0];
+            const botUsername = ctx.botInfo?.username || process.env.BOT_USERNAME.replace('@', '') || 'unknown_bot';
+            const link = `https://t.me/${botUsername}?start=${album.unique_token}`;
+            
+            try {
+                await ctx.telegram.editMessageText(
+                    process.env.PUBLIC_CHANNEL_ID,
+                    album.channel_message_id,
+                    null,
+                    `📢 Media Baru Tersedia!\n\n⭐ Rating: ${s.rating_avg} (${s.rating_count} rating)\n📥 Jumlah unduhan: ${s.download_count || 0}\n\nKlik link untuk mendapatkan media:\n${link}`,
+                    Markup.inlineKeyboard([Markup.button.url('📥 Dapatkan Media', link)])
+                ).catch(() => {}); // Abaikan jika konten sama (identical)
+            } catch (e) {
+                // Ignore error if message is identical or other non-critical issues
             }
+        } else if (album.channel_message_id && !process.env.PUBLIC_CHANNEL_ID) {
+            console.warn('[Rating] PUBLIC_CHANNEL_ID is not set, skipping channel update');
+        }
         } else {
             return ctx.answerCbQuery('Anda sudah memberikan rating untuk media ini.', true);
         }
