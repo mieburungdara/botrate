@@ -1,5 +1,6 @@
 const { verifyWebAppInitData, parseInitData } = require('../helpers/webapp');
 const db = require('../config/db');
+const crypto = require('crypto');
 
 function webAppAuthMiddleware(req, res, next) {
     const authHeader = req.headers['x-telegram-init-data'];
@@ -32,8 +33,8 @@ function webAppAuthMiddleware(req, res, next) {
         next();
     } catch (err) {
         console.error('[WebAppAuth:DB] Error fetching user:', err);
-        // Generate error ID for tracking
-        const errorId = Math.random().toString(36).substring(2, 9).toUpperCase();
+        // Generate error ID for tracking using cryptographically secure random
+        const errorId = crypto.randomBytes(3).toString('hex').toUpperCase().substring(0, 6);
         res.status(500).json({ error: 'Internal Auth Error', errorId });
     }
 }
