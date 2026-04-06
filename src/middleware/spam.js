@@ -2,6 +2,11 @@ const rateLimitCache = new Map();
 const LIMIT_MS = 1000; // 1 detik interval minimal (Anti-Rapid-Fire)
 const MAX_MESSAGES_PER_MINUTE = 40; // Naikkan limit untuk mendukung album (Media Group)
 
+// Validate ADMIN_USER_ID is set
+if (!process.env.ADMIN_USER_ID) {
+    throw new Error('ADMIN_USER_ID environment variable is required');
+}
+
 /**
  * Middleware untuk mencegah spam/flooding dari user ke bot.
  * Diperbarui untuk mendukung Album (Media Group) yang dikirim serentak.
