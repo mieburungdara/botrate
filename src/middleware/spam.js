@@ -1,16 +1,22 @@
 const rateLimitCache = new Map();
-const LIMIT_MS = 1000; // 1 detik interval minimal antar pesan
-const MAX_MESSAGES_PER_MINUTE = 20;
+const LIMIT_MS = 1000; // 1 detik interval minimal (Anti-Rapid-Fire)
+const MAX_MESSAGES_PER_MINUTE = 40; // Naikkan limit untuk mendukung album (Media Group)
 
 /**
  * Middleware untuk mencegah spam/flooding dari user ke bot.
+ * Diperbarui untuk mendukung Album (Media Group) yang dikirim serentak.
  */
 const spamMiddleware = async (ctx, next) => {
     if (!ctx.from) return next();
+    
+    // Abaikan pengecekan spam untuk admin utama
+    if (ctx.from.id == process.env.ADMIN_USER_ID) return next();
+
     const userId = ctx.from.id;
     const now = Date.now();
+    const isMediaGroup = !!ctx.message?.media_group_id;
 
-    // Inisialisasi atau ambil data user dari cache
+    // Inisialisasi cache user jika belum ada
     if (!rateLimitCache.has(userId)) {
         rateLimitCache.set(userId, {
             lastMsgTime: 0,
@@ -21,16 +27,16 @@ const spamMiddleware = async (ctx, next) => {
 
     const userData = rateLimitCache.get(userId);
 
-    // 1. Cek interval minimal (Anti-Rapid-Fire)
-    if (now - userData.lastMsgTime < LIMIT_MS) {
-        // Abaikan atau beri peringatan jika mau, tapi abaikan lebih hemat resource
+    // 1. CEK INTERVAL MINIMAL (Hanya untuk pesan tunggal & tombol)
+    // Album dikirim secara simultan oleh Telegram, maka interval < 1s dianggap VALID untuk album
+    if (!isMediaGroup && (now - userData.lastMsgTime < LIMIT_MS)) {
         if (ctx.callbackQuery) {
-            await ctx.answerCbQuery('Mendingan santai aja ya, jangan diklik terus-terusan. 😊', { show_alert: true });
+            await ctx.answerCbQuery('⚠️ Jangan diklik terlalu cepat. 😊', { show_alert: true });
         }
-        return;
+        return; // Hentikan pemrosesan
     }
 
-    // 2. Cek kuota per menit (Anti-Flooding)
+    // 2. CEK KUOTA GLOBAL PER MENIT (Anti-Flooding)
     if (now > userData.resetTime) {
         userData.msgCount = 0;
         userData.resetTime = now + 60000;
@@ -40,8 +46,9 @@ const spamMiddleware = async (ctx, next) => {
     userData.lastMsgTime = now;
 
     if (userData.msgCount > MAX_MESSAGES_PER_MINUTE) {
-        if (ctx.message) {
-            await ctx.reply('⚠️ Anda terlalu cepat mengirim pesan. Silahkan coba lagi dalam satu menit.');
+        // Berikan peringatan hanya jika bukan bagian dari media group (agar tidak spam peringatan)
+        if (ctx.message && !isMediaGroup) {
+            await ctx.reply('⚠️ Anda terlalu cepat mengirim pesan. Silahkan tunggu sebentar (1 menit).');
         }
         return;
     }
@@ -49,14 +56,14 @@ const spamMiddleware = async (ctx, next) => {
     return next();
 };
 
-// Pembersihan cache secara berkala setiap 10 menit untuk mencegah memory leak
+// Pembersihan cache secara berkala setiap 5 menit
 setInterval(() => {
     const now = Date.now();
     for (const [userId, data] of rateLimitCache.entries()) {
-        if (now - data.lastMsgTime > 300000) { // Jika tidak aktif lebih dari 5 menit
+        if (now - data.lastMsgTime > 300000) {
             rateLimitCache.delete(userId);
         }
     }
-}, 600000);
+}, 300000);
 
 module.exports = { spamMiddleware };

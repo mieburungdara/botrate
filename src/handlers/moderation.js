@@ -1,5 +1,6 @@
 const { Markup } = require('telegraf');
 const db = require('../config/db');
+const { AlbumStatus } = require('../constants/status');
 
 const rejectReasons = [
     'Konten tidak sesuai',
@@ -12,34 +13,34 @@ const rejectReasons = [
 async function handleApprove(ctx) {
     const albumId = ctx.match[1];
     
-    // Update status album secara atomik (hanya jika masih pending)
+    // Update status media secara atomik (hanya jika sudah dikirim & masih pending)
     const [result] = await db.execute(`
         UPDATE albums 
-        SET status = 'approved', approved_at = CURRENT_TIMESTAMP 
-        WHERE id = ? AND status = 'pending'
-    `, [albumId]);
+        SET status = ?, approved_at = CURRENT_TIMESTAMP 
+        WHERE id = ? AND status = ? AND is_submitted = 1
+    `, [AlbumStatus.APPROVED, albumId, AlbumStatus.PENDING]);
 
     if (result.affectedRows === 0) {
-        // Jika status sudah berubah, berarti admin lain baru saja menyetujui/menolak
-        return ctx.answerCbQuery('Album sudah diproses sebelumnya', true);
+        return ctx.answerCbQuery('Media sudah diproses atau belum dikirim secara resmi', true);
     }
 
-    // Ambil detail album untuk kebutuhan notifikasi & publikasi
+    // Ambil detail media
     const [albumRows] = await db.execute('SELECT * FROM albums WHERE id = ?', [albumId]);
     const album = albumRows[0];
 
-    // Kirim ke channel publik
-    const link = `https://t.me/${process.env.BOT_USERNAME.replace('@', '')}?start=${album.unique_token}`;
+    // Kirim ke channel publik (Gunakan username bot dinamis jika tersedia)
+    const botUsername = (ctx.botInfo?.username || process.env.BOT_USERNAME || '').replace('@', '') || 'unknown_bot';
+    const link = `https://t.me/${botUsername}?start=${album.unique_token}`;
     
     const publicMsg = await ctx.telegram.sendMessage(
         process.env.PUBLIC_CHANNEL_ID,
-        `📢 Album Baru Tersedia!\n\n⭐ Rating: Belum ada rating\n📥 Jumlah unduhan: 0\n\nKlik link untuk mendapatkan album:\n${link}`,
+        `📢 Media Baru Tersedia!\n\n⭐ Rating: Belum ada rating\n📥 Jumlah unduhan: 0\n\nKlik link untuk mendapatkan media:\n${link}`,
         Markup.inlineKeyboard([
-            Markup.button.url('📥 Dapatkan Album', link)
+            Markup.button.url('📥 Dapatkan Media', link)
         ])
     );
 
-    // Simpan ID pesan channel untuk update rating nantinya
+    // Simpan ID pesan channel
     await db.execute(
         'UPDATE albums SET channel_message_id = ? WHERE id = ?',
         [publicMsg.message_id, albumId]
@@ -50,20 +51,20 @@ async function handleApprove(ctx) {
         inline_keyboard: [[Markup.button.callback('✅ Disetujui', 'noop')]]
     });
 
-    // Kirim notifikasi ke pengirim (Gunakan try-catch agar tidak gagalkan moderasi jika user memblok bot)
+    // Kirim notifikasi ke pengirim
     try {
         await ctx.telegram.sendMessage(
             album.chat_id,
-            '✅ Album Anda telah disetujui dan sudah dipublikasikan!'
+            '✅ Media Anda telah disetujui dan sudah dipublikasikan!'
         );
     } catch (notifErr) {
-        console.warn(`[Moderation] Gagal kirim notifikasi ke user ${album.user_id}:`, notifErr.message);
+        console.warn(`[Moderation:Approve] Gagal kirim notifikasi ke user (User mungkin memblokir bot). UserID: ${album.user_id}, AlbumID: ${albumId}`);
     }
 
-    // Hapus media lama di channel moderator agar channel tetap bersih
+    // Hapus media & pesan moderasi agar channel bersih
     await cleanupModeratorMedia(ctx, album);
 
-    await ctx.answerCbQuery('Album disetujui');
+    await ctx.answerCbQuery('Media disetujui');
 }
 
 async function handleReject(ctx) {
@@ -84,18 +85,17 @@ async function handleRejectConfirm(ctx) {
     const reasonIndex = parseInt(ctx.match[2]);
     const reason = rejectReasons[reasonIndex];
 
-    // Update status album secara atomik
+    // Update status media
     const [result] = await db.execute(`
         UPDATE albums 
-        SET status = 'rejected', rejected_at = CURRENT_TIMESTAMP, reject_reason = ?
-        WHERE id = ? AND status = 'pending'
-    `, [reason, albumId]);
+        SET status = ?, rejected_at = CURRENT_TIMESTAMP, reject_reason = ?
+        WHERE id = ? AND status = ? AND is_submitted = 1
+    `, [AlbumStatus.REJECTED, reason, albumId, AlbumStatus.PENDING]);
 
     if (result.affectedRows === 0) {
-        return ctx.answerCbQuery('Album sudah diproses sebelumnya', true);
+        return ctx.answerCbQuery('Media sudah diproses atau belum dikirim secara resmi', true);
     }
 
-    // Ambil detail album untuk kebutuhan notifikasi
     const [albumRows] = await db.execute('SELECT * FROM albums WHERE id = ?', [albumId]);
     const album = albumRows[0];
 
@@ -104,39 +104,40 @@ async function handleRejectConfirm(ctx) {
         inline_keyboard: [[Markup.button.callback(`❌ Ditolak: ${reason}`, 'noop')]]
     });
 
-    // Hapus media lama di channel moderator
+    // Hapus media & pesan moderasi
     await cleanupModeratorMedia(ctx, album);
 
     // Kirim notifikasi ke pengirim
     try {
         await ctx.telegram.sendMessage(
             album.chat_id,
-            `❌ Album Anda ditolak.\nAlasan: ${reason}`
+            `❌ Media Anda ditolak.\nAlasan: ${reason}`
         );
     } catch (notifErr) {
-        console.warn(`[Moderation] Gagal kirim notifikasi Reject ke user ${album.user_id}:`, notifErr.message);
+        console.warn(`[Moderation:Reject] Gagal kirim notifikasi ke user (User mungkin memblokir bot). UserID: ${album.user_id}, AlbumID: ${albumId}`);
     }
 
-    await ctx.answerCbQuery('Album ditolak');
+    await ctx.answerCbQuery('Media ditolak');
 }
 
-/**
- * Fungsi pembantu untuk menghapus pesan media dari channel moderator
- */
 async function cleanupModeratorMedia(ctx, album) {
-    if (album && album.moderator_media_ids) {
+    const channelId = process.env.MODERATOR_CHANNEL_ID;
+    
+    // Kita sengaja TIDAK menghapus 'moderator_message_id' agar sisa jejak audit 
+    // status (Disetujui/Ditolak) tetap ada di channel moderasi.
+    
+    // Hapus hanya media group (media berat) secara paralel (Fix Bug 54)
+    if (album.moderator_media_ids) {
         try {
             const mediaIds = JSON.parse(album.moderator_media_ids);
             if (Array.isArray(mediaIds) && mediaIds.length > 0) {
-                // Gunakan deleteMessages (jamak) jika tersedia, atau loop deleteMessage
-                for (const msgId of mediaIds) {
-                    try {
-                        await ctx.telegram.deleteMessage(process.env.MODERATOR_CHANNEL_ID, msgId);
-                    } catch (e) { /* Abaikan jika sudah terhapus */ }
-                }
+                // Gunakan Promise.allSettled agar penghapusan cepat & tidak terhenti jika ada error
+                await Promise.allSettled(
+                    mediaIds.map(msgId => ctx.telegram.deleteMessage(channelId, msgId))
+                );
             }
         } catch (err) {
-            console.warn('[Moderation] Gagal parsing moderator_media_ids:', err.message);
+            console.error('[CleanupModerator] Error:', err.message);
         }
     }
 }

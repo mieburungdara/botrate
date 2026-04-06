@@ -66,6 +66,17 @@ async function migrate() {
         `);
         console.log('Verified activity_logs table.');
 
+        // Tambahkan is_public dan anonymous_id ke tabel users (Hardening Tahap 7 & 8)
+        try {
+            await pool.execute('ALTER TABLE users ADD COLUMN is_public BOOLEAN DEFAULT TRUE AFTER is_admin;');
+            console.log('Added is_public column to users.');
+        } catch (e) { if (e.errno !== 1060) throw e; }
+
+        try {
+            await pool.execute('ALTER TABLE users ADD COLUMN anonymous_id VARCHAR(16) UNIQUE AFTER is_public;');
+            console.log('Added anonymous_id column to users.');
+        } catch (e) { if (e.errno !== 1060) throw e; }
+
         console.log('Migration successful.');
         process.exit(0);
     } catch (error) {

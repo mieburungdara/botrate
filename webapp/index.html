@@ -34,12 +34,53 @@
         </section>
 
         <nav class="tabs">
-            <button class="tab-btn active" data-tab="albums">📁 Album Saya</button>
+            <button class="tab-btn active" data-tab="search">🔍 Cari</button>
+            <button class="tab-btn" data-tab="pending">⏳ Pending</button>
+            <button class="tab-btn" data-tab="profile">👤 Profil</button>
+            <button class="tab-btn" data-tab="albums">🖼️ Galeri Saya</button>
             <button class="tab-btn" data-tab="stats">📊 Statistik</button>
+            <button class="tab-btn" data-tab="settings">⚙️ Pengaturan</button>
         </nav>
 
-        <section id="albumsTab" class="tab-content active">
-            <h2>Daftar Album</h2>
+        <section id="searchTab" class="tab-content active">
+            <div class="search-box">
+                <input type="text" id="searchInput" placeholder="Masukkan ID Kreator (cth: BA-XXXXX)...">
+                <button id="searchBtn">Cari</button>
+            </div>
+            <div id="searchResultsInfo" style="display:none; margin: 15px 0; color: var(--hint-color); font-size: 14px;"></div>
+            <div id="searchResultsList" class="albums-list"></div>
+        </section>
+
+        <section id="pendingTab" class="tab-content">
+            <h2>Media Tertunda</h2>
+            <p style="color: var(--hint-color); margin-bottom: 20px;">Lengkapi caption dan klik upload untuk mengirim ke moderasi admin agar media Anda dipublikasikan.</p>
+            <div id="pendingList" class="albums-list"></div>
+        </section>
+
+        <section id="profileTab" class="tab-content">
+            <div id="profileContent" class="profile-view">
+                <div class="loading">Memuat profil...</div>
+            </div>
+        </section>
+
+        <section id="settingsTab" class="tab-content">
+            <h2>Pengaturan Akun</h2>
+            <div class="settings-list">
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <strong>Mode Publik</strong>
+                        <p>Jika aktif, username Anda akan dicantumkan saat orang lain mengakses album Anda.</p>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="publicModeToggle" onchange="updatePrivacy(this.checked)">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+            </div>
+        </section>
+
+        <section id="albumsTab" class="tab-content">
+            <h2>Galeri Media</h2>
             <div id="albumsList" class="albums-list"></div>
         </section>
 

@@ -1,57 +1,62 @@
 const { Markup } = require('telegraf');
 const db = require('../config/db');
-const { generateToken } = require('../helpers/token');
+const { generateToken, generateUniqueToken } = require('../helpers/token');
+const { AlbumStatus } = require('../constants/status');
 
 // Cache untuk menyimpan album yang sedang dikumpulkan
 const albumCache = new Map();
 const ALBUM_TIMEOUT = 5000; // 5 detik
 
+/**
+ * Mendapatkan kunci unik untuk cache album (Fix Bug 52)
+ */
+const getCacheKey = (userId, mediaGroupId) => `${userId}:${mediaGroupId}`;
+
 async function handleAlbum(ctx) {
     const mediaGroupId = ctx.update.message.media_group_id;
     const userId = ctx.from.id;
-    const chatId = ctx.chat.id;
-    const messageId = ctx.message.message_id;
-    const caption = ctx.message.caption || '';
+    const cacheKey = getCacheKey(userId, mediaGroupId);
 
-    // Deteksi duplikat berbasis CAPTION (Jika ada teksnya)
+    const caption = ctx.message.caption || '';
+    const messageId = ctx.message.message_id;
+
+    // Deteksi duplikat berbasis CAPTION
     if (caption) {
         try {
             const [rows] = await db.execute(`
                 SELECT id FROM albums 
-                WHERE user_id = ? AND caption = ? AND created_at > DATE_SUB(NOW(), INTERVAL 30 MINUTE)
+                WHERE user_id = ? AND caption = ? AND created_at > DATE_SUB(NOW(), INTERVAL 15 MINUTE)
                 LIMIT 1
             `, [userId, caption]);
-            if (rows.length > 0) return; // Abaikan jika teksnya persis sama dalam 30 menit terakhir
+            if (rows.length > 0) {
+                return ctx.reply('⚠️ Media dengan caption serupa baru saja diunggah. Silakan cek menu Pending.');
+            }
         } catch (e) {
             console.error('[DuplicateCheck] Error:', e);
         }
     }
 
-    if (!albumCache.has(mediaGroupId)) {
-        albumCache.set(mediaGroupId, {
+    if (!albumCache.has(cacheKey)) {
+        albumCache.set(cacheKey, {
             user_id: userId,
-            chat_id: chatId,
+            chat_id: ctx.chat.id,
             message_ids: [],
             media_items: [],
             caption: caption,
             is_processed: false,
             timeout: setTimeout(async () => {
-                await processAlbum(mediaGroupId, ctx);
+                await processAlbum(cacheKey, ctx);
             }, ALBUM_TIMEOUT)
         });
     }
 
-    const album = albumCache.get(mediaGroupId);
-    
-    // Abaikan pesan jika album sedang/sudah diproses
+    const album = albumCache.get(cacheKey);
     if (album.is_processed) return;
     
-    // Batas 10 media per album (Limit API Telegram)
+    // Batas 10 media
     if (album.message_ids.length >= 10) {
-        // Jika ini media ke-11, beri peringatan satu kali
         if (album.message_ids.length === 10) {
-            ctx.reply('⚠️ Maksimal 10 media per album. Media tambahan akan diabaikan.');
-            // Tambah dummy agar tidak kirim reply berulang untuk pesan ke 12, 13 dst
+            ctx.reply('⚠️ Maksimal 10 media per album.');
             album.message_ids.push('LIMIT_EXCEEDED'); 
         }
         return;
@@ -59,7 +64,6 @@ async function handleAlbum(ctx) {
 
     album.message_ids.push(messageId);
 
-    // Ambil file_id dan type untuk sendMediaGroup nantinya
     let type = '';
     let fileId = '';
     if (ctx.message.photo) {
@@ -77,125 +81,90 @@ async function handleAlbum(ctx) {
         album.media_items.push({ type, media: fileId });
     }
     
-    if (caption && !album.caption) {
-        album.caption = caption;
-    }
+    if (caption && !album.caption) album.caption = caption;
 
+    // Refresh timeout
     clearTimeout(album.timeout);
     album.timeout = setTimeout(async () => {
-        await processAlbum(mediaGroupId, ctx);
+        await processAlbum(cacheKey, ctx);
     }, ALBUM_TIMEOUT);
 }
 
-async function processAlbum(mediaGroupId, ctx) {
-    const album = albumCache.get(mediaGroupId);
+async function processAlbum(cacheKey, ctx) {
+    const album = albumCache.get(cacheKey);
     if (!album || album.is_processed) return;
     
+    // Start transaction to prevent race conditions
+    let connection;
     try {
-        // Tandai sebagai sedang diproses
         album.is_processed = true;
         if (album.timeout) clearTimeout(album.timeout);
 
-        // Hapus cache fisik setelah 30 detik (agar mediaGroupId tidak bisa dipakai lagi dalam waktu dekat)
-        setTimeout(() => {
-            albumCache.delete(mediaGroupId);
-        }, 30000);
+        // Get connection for transaction
+        connection = await db.getConnection();
+        await connection.beginTransaction();
 
-        const token = generateToken();
+        const token = await generateUniqueToken(db);
         
         // Simpan album ke database
-        const [result] = await db.execute(`
-            INSERT INTO albums (user_id, media_group_id, message_ids, media_items, chat_id, caption, unique_token)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+        const [result] = await connection.execute(`
+            INSERT INTO albums (user_id, media_group_id, message_ids, media_items, chat_id, caption, unique_token, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `, [
             album.user_id, 
-            mediaGroupId,
+            cacheKey.split(':')[1],
             JSON.stringify(album.message_ids), 
             JSON.stringify(album.media_items),
             album.chat_id, 
             album.caption, 
-            token
+            token,
+            AlbumStatus.DRAFT
         ]);
 
-        // Update counter user
-        await db.execute(
-            'UPDATE users SET album_count = album_count + 1 WHERE user_id = ?',
+        const albumId = result.insertId;
+        
+        // Update album_count menggunakan query yang lebih aman
+        await connection.execute(
+            'UPDATE users SET album_count = (SELECT COUNT(*) FROM albums WHERE user_id = ? AND is_submitted = 1)', 
             [album.user_id]
         );
 
-        // Dapatkan info user
-        const [userRows] = await db.execute(
-            'SELECT username, first_name FROM users WHERE user_id = ?',
-            [album.user_id]
-        );
-        const user = userRows[0];
+        await connection.commit();
 
-        // Sisipkan caption pada media pertama agar moderator bisa melihat langsung di album
-        const mediaForModerator = [...album.media_items];
-        if (album.caption) {
-            mediaForModerator[0].caption = album.caption;
-        }
-
-        // Kirim Media Group ke channel moderator (ambil res untuk menyimpan IDs)
-        const moderatorMediaMsgs = await ctx.telegram.sendMediaGroup(
-            process.env.MODERATOR_CHANNEL_ID,
-            mediaForModerator
-        );
-        const moderatorMediaIds = moderatorMediaMsgs.map(m => m.message_id);
-
-        // Kirim Tombol Moderasi (Pesan Teks Terpisah - Opsi B)
-        const keyboard = Markup.inlineKeyboard([
-            Markup.button.callback('✅ Setuju', `approve_${result.insertId}`),
-            Markup.button.callback('❌ Tolak', `reject_${result.insertId}`)
-        ]);
-
-        const moderatorMessage = await ctx.telegram.sendMessage(
-            process.env.MODERATOR_CHANNEL_ID,
-            `📥 Album baru dari: ${user.first_name} ${user.username ? `(@${user.username})` : ''}\nID: ${album.user_id}\n\n${album.caption}`,
-            keyboard
-        );
-
-        // Simpan message_id moderator (teks & media ids)
-        await db.execute(
-            'UPDATE albums SET moderator_message_id = ?, moderator_media_ids = ? WHERE id = ?',
-            [moderatorMessage.message_id, JSON.stringify(moderatorMediaIds), result.insertId]
-        );
-
-        await ctx.reply('✅ Album telah dikirim untuk moderasi. Anda akan mendapatkan notifikasi ketika album disetujui atau ditolak.');
+        await ctx.reply('✅ <b>Media berhasil diunggah!</b>\n\nSilakan buka <b>WebApp</b> dan cek menu <b>⏳ Pending</b> untuk melengkapi caption dan mengirimnya ke moderasi.', { parse_mode: 'HTML' });
 
     } catch (error) {
-        console.error('Process album error:', error);
-        await ctx.reply('❌ Terjadi kesalahan saat memproses album. Silahkan coba lagi nanti.');
+        // Rollback transaction if any error occurs
+        if (connection) {
+            await connection.rollback().catch(noop => {}); // Ignore rollback errors
+        }
+        console.error('[ProcessAlbum] Error:', error);
+        await ctx.reply('❌ Gagal memproses album. Silakan coba kirim ulang.');
+    } finally {
+        // Release connection back to pool
+        if (connection) {
+            connection.release();
+        }
+        // Pembersihan Cache (Fix Bug 53)
+        setTimeout(() => {
+            albumCache.delete(cacheKey);
+        }, 30000);
     }
 }
 
+// Fungsi bantuan untuk operasi noop
+function noop() {}
+
 async function handleSingleMedia(ctx) {
     const userId = ctx.from.id;
-    const chatId = ctx.chat.id;
-    const messageId = ctx.message.message_id;
     const caption = ctx.message.caption || '';
 
-    // Deteksi duplikat sederhana
-    if (caption) {
-        try {
-            const [rows] = await db.execute(`
-                SELECT id FROM albums 
-                WHERE user_id = ? AND caption = ? AND created_at > DATE_SUB(NOW(), INTERVAL 30 MINUTE)
-                LIMIT 1
-            `, [userId, caption]);
-            if (rows.length > 0) {
-                return ctx.reply('⚠️ Anda sudah mengirimkan media ini sebelumnya. Mohon tunggu proses moderasi.');
-            }
-        } catch (e) {
-            console.error('[DuplicateCheck] Error:', e);
-        }
-    }
-
+    // Start transaction to prevent race conditions
+    let connection;
     try {
-        const token = generateToken();
+        const token = await generateUniqueToken(db);
         
-        // Tentukan tipe media
-        let type = 'photo';
+        let type = '';
         let fileId = '';
         if (ctx.message.photo) {
             type = 'photo';
@@ -206,56 +175,52 @@ async function handleSingleMedia(ctx) {
         } else if (ctx.message.document) {
             type = 'document';
             fileId = ctx.message.document.file_id;
+        } else if (ctx.message.animation) {
+            type = 'animation';
+            fileId = ctx.message.animation.file_id;
+        } else if (ctx.message.audio) {
+            type = 'audio';
+            fileId = ctx.message.audio.file_id;
         }
+
+        if (!type || !fileId) return;
 
         const mediaItems = [{ type, media: fileId }];
 
-        // Simpan media tunggal ke database
-        const [result] = await db.execute(`
-            INSERT INTO albums (user_id, media_group_id, message_ids, media_items, chat_id, caption, unique_token)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        `, [userId, null, JSON.stringify([messageId]), JSON.stringify(mediaItems), chatId, caption, token]);
+        // Get connection for transaction
+        connection = await db.getConnection();
+        await connection.beginTransaction();
 
-        // Update counter user
-        await db.execute(
-            'UPDATE users SET album_count = album_count + 1 WHERE user_id = ?',
+        // Simpan media ke database
+        const [result] = await connection.execute(`
+            INSERT INTO albums (user_id, media_group_id, message_ids, media_items, chat_id, caption, unique_token, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `, [userId, null, JSON.stringify([ctx.message.message_id]), JSON.stringify(mediaItems), ctx.chat.id, caption, token, AlbumStatus.DRAFT]);
+
+        const albumId = result.insertId;
+        
+        // Update album_count menggunakan query yang lebih aman
+        await connection.execute(
+            'UPDATE users SET album_count = (SELECT COUNT(*) FROM albums WHERE user_id = ? AND is_submitted = 1)', 
             [userId]
         );
 
-        // Dapatkan info user
-        const [userRows] = await db.execute(
-            'SELECT username, first_name FROM users WHERE user_id = ?',
-            [userId]
-        );
-        const user = userRows[0];
+        await connection.commit();
 
-        // Kirim ke channel moderator
-        const keyboard = Markup.inlineKeyboard([
-            Markup.button.callback('✅ Setuju', `approve_${result.insertId}`),
-            Markup.button.callback('❌ Tolak', `reject_${result.insertId}`)
-        ]);
-
-        const moderatorMessage = await ctx.telegram.copyMessage(
-            process.env.MODERATOR_CHANNEL_ID,
-            chatId,
-            messageId,
-            {
-                caption: `📥 Media baru dari: ${user.first_name} ${user.username ? `(@${user.username})` : ''}\nID: ${userId}\n\n${caption}`,
-                reply_markup: keyboard.reply_markup
-            }
-        );
-
-        // Simpan message_id moderator
-        await db.execute(
-            'UPDATE albums SET moderator_message_id = ? WHERE id = ?',
-            [moderatorMessage.message_id, result.insertId]
-        );
-
-        await ctx.reply('✅ Media telah dikirim untuk moderasi. Anda akan mendapatkan notifikasi ketika disetujui atau ditolak.');
+        await ctx.reply('✅ <b>Media berhasil diunggah!</b>\n\nSilakan cek menu <b>⏳ Pending</b> di WebApp untuk memproses media ini.', { parse_mode: 'HTML' });
 
     } catch (error) {
-        console.error('Process single media error:', error);
-        await ctx.reply('❌ Terjadi kesalahan saat memproses media. Silahkan coba lagi nanti.');
+        // Rollback transaction if any error occurs
+        if (connection) {
+            await connection.rollback().catch(noop => {}); // Ignore rollback errors
+        }
+        console.error('[SingleMedia] Error:', error);
+        await ctx.reply('❌ Gagal memproses media.');
+    } finally {
+        // Release connection back to pool
+        if (connection) {
+            connection.release();
+        }
     }
 }
 
