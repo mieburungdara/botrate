@@ -13,9 +13,10 @@ class Download extends Model
     ];
 
     protected $casts = [
-        'album_id' => 'integer',
+        'album_id' => 'bigint',
         'user_id' => 'bigint',
         'created_at' => 'datetime',
+        'updated_at' => 'datetime',
     ];
 
     /**

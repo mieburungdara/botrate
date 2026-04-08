@@ -13,12 +13,12 @@ return new class extends Migration
     {
         Schema::create('downloads', function (Blueprint $table) {
             $table->id();
-            $table->bigInteger('album_id');
-            $table->bigInteger('user_id');
+            $table->unsignedBigInteger('album_id');
+            $table->unsignedBigInteger('user_id');
             $table->timestamp('created_at')->useCurrent();
 
             $table->foreign('album_id')->references('id')->on('albums')->onDelete('cascade');
-            $table->foreign('user_id')->references('user_id')->on('users');
+            $table->foreign('user_id')->references('user_id')->on('users')->onDelete('cascade');
             $table->unique(['album_id', 'user_id'], 'unique_download');
         });
     }

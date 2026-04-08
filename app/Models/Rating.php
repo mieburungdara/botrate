@@ -15,10 +15,11 @@ class Rating extends Model
     ];
 
     protected $casts = [
-        'album_id' => 'integer',
+        'album_id' => 'bigint',
         'user_id' => 'bigint',
         'rating' => 'integer',
         'created_at' => 'datetime',
+        'updated_at' => 'datetime',
     ];
 
     /**

@@ -13,13 +13,13 @@ return new class extends Migration
     {
         Schema::create('blacklist', function (Blueprint $table) {
             $table->id();
-            $table->bigInteger('user_id')->unique();
+            $table->unsignedBigInteger('user_id')->unique();
             $table->text('reason')->nullable();
-            $table->bigInteger('banned_by');
+            $table->unsignedBigInteger('banned_by');
             $table->timestamp('created_at')->useCurrent();
 
             $table->foreign('user_id')->references('user_id')->on('users')->onDelete('cascade');
-            $table->foreign('banned_by')->references('user_id')->on('users');
+            $table->foreign('banned_by')->references('user_id')->on('users')->onDelete('cascade');
         });
     }
 
