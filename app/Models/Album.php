@@ -128,7 +128,7 @@ class Album extends Model
     public function getVisualMedia(): array
     {
         return array_filter($this->getMediaItems(), function ($item) {
-            return in_array($item['type'], ['photo', 'video']);
+            return isset($item['type']) && in_array($item['type'], ['photo', 'video']);
         });
     }
 
@@ -138,7 +138,7 @@ class Album extends Model
     public function getDocuments(): array
     {
         return array_filter($this->getMediaItems(), function ($item) {
-            return $item['type'] === 'document';
+            return isset($item['type']) && $item['type'] === 'document';
         });
     }
 }
