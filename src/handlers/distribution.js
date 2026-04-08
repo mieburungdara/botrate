@@ -57,17 +57,6 @@ async function handleStartWithToken(ctx) {
                 await ctx.telegram.sendMediaGroup(ctx.chat.id, visualMedia);
             }
 
-            // Function to escape HTML special characters
-            const escapeHtml = (text) => {
-                if (!text) return '';
-                return String(text)
-                    .replace(/&/g, '&amp;')
-                    .replace(/</g, '&lt;')
-                    .replace(/>/g, '&gt;')
-                    .replace(/"/g, '&quot;')
-                    .replace(/'/g, '&#039;');
-            };
-
             // Kirim Dokumen secara terpisah jika ada (Karena tidak bisa di-group dengan foto/video)
             if (documents.length > 0) {
                 for (let i = 0; i < documents.length; i++) {

@@ -173,36 +173,7 @@ async function updateMediaCaption(req, res) {
         await db.execute('UPDATE albums SET caption = ? WHERE id = ?', [caption, albumId]);
         res.json({ success: true });
     } catch (error) {
-        res.status(500).json({ error: 'Gagal update caption' });
-    }
-}
-
-async function deleteAlbum(req, res) {
-    try {
-        const userId = req.user.id;
-        const albumId = req.params.id;
-
-        // Input validation for albumId
-        if (!albumId || !/^\d+$/.test(albumId)) {
-            return res.status(400).json({ error: 'ID album tidak valid' });
-        }
-
-        const [rows] = await db.execute('SELECT id, status FROM albums WHERE id = ? AND user_id = ?', [albumId, userId]);
-        if (rows.length === 0) {
-            return res.status(404).json({ error: 'Media tidak ditemukan' });
-        }
-
-        if (rows[0].status === 'pending') {
-            return res.status(400).json({ error: 'Tidak dapat menghapus media yang sedang dalam proses moderasi. Tunggu admin memberikan keputusan.' });
-        }
-
-        // Hapus media dan kurangi penghitung secara seirama (Fix Bug 94)
-        await db.execute('DELETE FROM albums WHERE id = ?', [albumId]);
-        await db.execute('UPDATE users SET album_count = (SELECT COUNT(*) FROM albums WHERE user_id = ? AND is_submitted = 1)', [userId]);
-        
-        res.json({ success: true });
-    } catch (error) {
-        res.status(500).json({ error: 'Gagal menghapus media' );
+        res.status(500).json({ error: 'Gagal menghapus media' });
     }
 }
 
@@ -377,7 +348,7 @@ async function deleteAlbum(req, res) {
         
         res.json({ success: true });
     } catch (error) {
-        res.status(500).json({ error: 'Gagal menghapus media' );
+        res.status(500).json({ error: 'Gagal menghapus media' });
     }
 }
 }

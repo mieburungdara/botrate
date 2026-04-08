@@ -57,7 +57,6 @@ async function handleAlbum(ctx) {
     if (album.message_ids.length >= 10) {
         if (album.message_ids.length === 10) {
             ctx.reply('⚠️ Maksimal 10 media per album.');
-            album.message_ids.push('LIMIT_EXCEEDED'); 
         }
         return;
     }
@@ -81,7 +80,10 @@ async function handleAlbum(ctx) {
         album.media_items.push({ type, media: fileId });
     }
     
-    if (caption && !album.caption) album.caption = caption;
+    // Hanya set caption jika album belum punya caption (jangan overwrite)
+    if (caption && !album.caption) {
+        album.caption = caption;
+    }
 
     // Refresh timeout
     clearTimeout(album.timeout);
@@ -97,7 +99,6 @@ async function processAlbum(cacheKey, ctx) {
     // Start transaction to prevent race conditions
     let connection;
     try {
-        album.is_processed = true;
         if (album.timeout) clearTimeout(album.timeout);
 
         // Get connection for transaction
@@ -105,7 +106,7 @@ async function processAlbum(cacheKey, ctx) {
         await connection.beginTransaction();
 
         const token = await generateUniqueToken(db);
-        
+         
         // Simpan album ke database
         const [result] = await connection.execute(`
             INSERT INTO albums (user_id, media_group_id, message_ids, media_items, chat_id, caption, unique_token, status)
@@ -120,19 +121,22 @@ async function processAlbum(cacheKey, ctx) {
             token,
             AlbumStatus.DRAFT
         ]);
-
+ 
         const albumId = result.insertId;
-        
-        // Update album_count menggunakan query yang lebih aman
-        await connection.execute(
-            'UPDATE users SET album_count = (SELECT COUNT(*) FROM albums WHERE user_id = ? AND is_submitted = 1)', 
-            [album.user_id]
-        );
-
+         
+        // Mark as processed after successful insert
+        album.is_processed = true;
+         
+        // Update album_count hanya untuk submitted albums (draft tidak dihitung)
+        // await connection.execute(
+        //     'UPDATE users SET album_count = (SELECT COUNT(*) FROM albums WHERE user_id = ? AND is_submitted = 1)', 
+        //     [album.user_id]
+        // );
+ 
         await connection.commit();
-
+ 
         await ctx.reply('✅ <b>Media berhasil diunggah!</b>\n\nSilakan buka <b>WebApp</b> dan cek menu <b>⏳ Pending</b> untuk melengkapi caption dan mengirimnya ke moderasi.', { parse_mode: 'HTML' });
-
+ 
     } catch (error) {
         // Rollback transaction if any error occurs
         if (connection) {

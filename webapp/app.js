@@ -8,12 +8,12 @@ tg.ready();
 // Utilitas Keamanan (Anti-XSS)
 function escapeHTML(str) {
     if (!str) return '';
-    return str.replace(/[&<>"']/g, function(m) {
+    return String(str).replace(/[&<>"']/g, function(m) {
         return {
-            '&': '&amp;',
-            '<': '&lt;',
-            '>': '&gt;',
-            '"': '&quot;',
+            '&': '&',
+            '<': '<',
+            '>': '>',
+            '"': '"',
             "'": '&#039;'
         }[m];
     });
@@ -149,7 +149,7 @@ async function loadProfile() {
                 <div class="profile-details-grid">
                     <div class="detail-card">
                         <span class="label">Username</span>
-                        <span class="value">${p.username ? '@' + p.username : '-'}</span>
+                        <span class="value">${p.username ? '@' + escapeHTML(p.username) : '-'}</span>
                     </div>
                     <div class="detail-card">
                         <span class="label">Anggota Sejak</span>
@@ -350,7 +350,7 @@ function renderMediaList(albums, container, isSearch = false) {
             </div>
             <div class="album-footer">
                 ${isSearch ? 
-                    `<button class="btn-view" onclick="openInBot('${album.unique_token}')">🚀 Lihat di Bot</button>` : 
+                    `<button class="btn-view" onclick="openInBot('${escapeHTML(album.unique_token)}')">🚀 Lihat di Bot</button>` : 
                     `
                     <button class="btn-stats" onclick="viewStats(${album.id})">📊 Statistik</button>
                     <button class="btn-delete" onclick="handleDelete(${album.id})">🗑️ Hapus</button>
@@ -407,7 +407,7 @@ function viewStats(id) {
             data.stats.forEach(s => {
                 html += `<tr>
                     <td>${new Date(s.downloaded_at).toLocaleString('id-ID')}</td>
-                    <td>${s.anonymous_id}</td>
+                    <td>${escapeHTML(s.anonymous_id)}</td>
                 </tr>`;
             });
             html += '</tbody></table>';

@@ -119,48 +119,6 @@ async function submitToModeration(albumId) {
             return { success: false, error: 'Media ini sudah dikirim atau sedang dalam proses.' };
         }
 
-        if (mediaItems.length > 1) {
-            // --- CASE: ALBUM (Multi Media) ---
-            const mediaForModerator = mediaItems.map((item, index) => ({
-                ...item,
-                caption: index === 0 ? moderatorCaption : undefined,
-                parse_mode: index === 0 ? 'HTML' : undefined
-            }));
-
-            const moderatorMediaMsgs = await bot.telegram.sendMediaGroup(
-                process.env.MODERATOR_CHANNEL_ID,
-                mediaForModerator
-            );
-            moderatorMediaIds = moderatorMediaMsgs.map(m => m.message_id);
-
-            const moderatorMessage = await bot.telegram.sendMessage(
-                process.env.MODERATOR_CHANNEL_ID,
-                `⬆️ <i>Media di atas dikirim oleh user ID ${album.user_id}</i>`,
-                { 
-                    parse_mode: 'HTML',
-                    reply_markup: keyboard.reply_markup 
-                }
-            );
-            moderatorMessageId = moderatorMessage.message_id;
-        } else {
-            // --- CASE: MEDIA TUNGGAL ---
-            if (messageIds.length === 0) {
-                throw new Error('ID Pesan dasar tidak ditemukan');
-            }
-
-            const moderatorMessage = await bot.telegram.copyMessage(
-                process.env.MODERATOR_CHANNEL_ID,
-                album.chat_id,
-                messageIds[0],
-                { 
-                    caption: moderatorCaption, 
-                    parse_mode: 'HTML', 
-                    reply_markup: keyboard.reply_markup 
-                }
-            );
-            moderatorMessageId = moderatorMessage.message_id;
-        }
-
         // UPDATE FINAL (Simpan ID pesan moderator yang asli)
         await connection.execute(
             'UPDATE albums SET moderator_message_id = ?, moderator_media_ids = ? WHERE id = ?',

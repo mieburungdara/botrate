@@ -1,96 +1,169 @@
-# Bot Telegram Album Media
+# BotRate - Telegram Bot Rate & Moderation System
 
-Bot Telegram untuk menerima media (foto/video tunggal atau album), moderasi, dan distribusi terkontrol dengan fitur rating dan Mini Web App.
+Bot Telegram untuk manajemen media dengan fitur moderasi, rating, dan distribusi. Dibangun dengan Laravel (PHP 8.5) + MySQL + Redis.
 
 ## Fitur
 
-✅ Menerima foto tunggal, video tunggal, dan album media grup  
-✅ Moderasi di channel khusus dengan tombol Setuju/Tolak  
-✅ Alasan penolakan dengan pilihan preset  
-✅ Link download unik untuk setiap album yang disetujui  
-✅ Sistem rating 1-5 bintang setelah download  
-✅ Mini Web App untuk melihat daftar album dan statistik  
-✅ Auto-register user dan blacklist system  
-✅ Webhook dengan keamanan secret token
+- **Moderasi via Group**: Media dikirim ke group moderasi dengan inline keyboard (Setuju/Tolak)
+- **Alasan Penolakan**: Predefined (5 alasan) + custom (ketik manual)
+- **Deep Link Unik**: Setiap media yang disetujui mendapat token unik untuk sharing
+- **Channel Posting**: Informasi media diposting ke channel (tanpa media, hanya info + tombol)
+- **Rating System**: User bisa memberi rating ⭐ 1-5 pada media
+- **Anti-Spam**: Rate limiting berbasis Redis
+- **Blacklist**: Sistem blacklist user
+- **Web App**: Dashboard kontributor via Telegram WebApp
+- **Housekeeping**: Auto-cleanup draft expired (14 hari)
+
+## Arsitektur
+
+```
+User → Bot (Telegram) → Webhook → Laravel → MySQL + Redis
+                              ↓
+                    Moderation Group
+                              ↓
+                    Public Channel
+```
+
+## Persyaratan
+
+- PHP 8.5+
+- MySQL 8.0+ (InnoDB)
+- Redis 6+
+- Composer
+- Telegram Bot Token
 
 ## Instalasi
 
-1. Salin file konfigurasi:
+### 1. Clone Repository
+
+```bash
+git clone https://github.com/mieburungdara/botrate.git
+cd botrate
+```
+
+### 2. Install Dependencies
+
+```bash
+composer install
+```
+
+### 3. Setup Environment
+
 ```bash
 cp .env.example .env
 ```
 
-2. Edit file `.env` dan isi semua konfigurasi:
+Edit `.env` dan sesuaikan konfigurasi:
+
 ```env
-BOT_TOKEN=token_bot_dari_botfather
-BOT_USERNAME=@username_bot
-WEBHOOK_DOMAIN=https://domain-anda.com
-WEBHOOK_SECRET=token_rahasia_anda
-DB_HOST=localhost
-DB_USER=root
-DB_PASSWORD=password_database
-DB_NAME=telegram_bot
-MODERATOR_CHANNEL_ID=-100xxxxxxxxx
-PUBLIC_CHANNEL_ID=-100xxxxxxxxx
-ADMIN_USER_ID=123456789
+# Telegram
+TELEGRAM_BOT_TOKEN=your_bot_token
+TELEGRAM_BOT_USERNAME=YourBotUsername
+TELEGRAM_WEBHOOK_SECRET=your_secret
+TELEGRAM_ADMIN_USER_ID=123456789
+TELEGRAM_MODERATION_GROUP_ID=-100xxxxxxxxxx
+TELEGRAM_PUBLIC_CHANNEL_ID=-100xxxxxxxxxx
+TELEGRAM_CHANNEL_USERNAME=yourchannel
+
+# Database
+DB_HOST=127.0.0.1
+DB_DATABASE=botrate
+DB_USERNAME=root
+DB_PASSWORD=
+
+# Redis
+REDIS_HOST=127.0.0.1
+REDIS_PORT=6379
 ```
 
-3. Import struktur database:
+### 4. Generate App Key
+
 ```bash
-mysql -u root -p telegram_bot < database/migration.sql
+php artisan key:generate
 ```
 
-4. Install dependensi:
+### 5. Migrasi Database
+
 ```bash
-npm install
+php artisan migrate
 ```
 
-5. Jalankan bot:
+### 6. Setup Webhook
+
 ```bash
-# Development
-npm run dev
-
-# Production
-npm start
+php artisan telegram:webhook set
 ```
 
-## Pengaturan Bot di BotFather
+### 7. Jalankan Scheduler
 
-1. Jalankan `/setdomain` dan masukkan domain webhook Anda
-2. Jalankan `/setmenubutton` untuk menambahkan Mini Web App:
-   - URL: `https://domain-anda.com/webapp`
-   - Teks: `Dashboard`
+Tambahkan ke crontab:
 
-## Hak Akses Bot
-
-Pastikan bot ditambahkan sebagai ADMIN di kedua channel dengan hak:
-- ✅ Kirim Pesan
-- ✅ Edit Pesan
-- ✅ Hapus Pesan (opsional)
-
-## Struktur Proyek
-
-```
-├── src/
-│   ├── config/          # Konfigurasi database dan bot
-│   ├── middleware/      # Middleware autentikasi
-│   ├── handlers/        # Handler pesan dan callback
-│   ├── helpers/         # Utility functions
-│   └── models/          # Database models
-├── webapp/              # Frontend Mini Web App
-├── database/            # File migrasi SQL
-├── server.js            # Entry point server
-└── .env                 # Konfigurasi environment
+```bash
+* * * * * cd /path/to/botrate && php artisan schedule:run >> /dev/null 2>&1
 ```
 
-## API Endpoints
+## Struktur Folder
 
-- `POST /telegram-webhook` - Webhook Telegram
-- `GET /api/user/profile` - Profil user terautentikasi
-- `GET /api/user/albums` - Daftar album user
-- `GET /api/admin/stats` - Statistik global (khusus admin)
-- `GET /webapp` - Mini Web App frontend
+```
+botrate/
+├── NODE_SYSTEM/              # Backup sistem Node.js (read-only)
+├── app/
+│   ├── Console/Commands/
+│   │   ├── Housekeeping.php
+│   │   └── TelegramWebhook.php
+│   ├── Http/
+│   │   ├── Controllers/
+│   │   │   ├── TelegramWebhookController.php
+│   │   │   └── WebAppController.php
+│   │   └── Middleware/
+│   ├── Models/
+│   │   ├── User.php
+│   │   ├── Album.php
+│   │   ├── Rating.php
+│   │   ├── Download.php
+│   │   └── Blacklist.php
+│   └── Services/
+│       └── Telegram/
+│           ├── TelegramBot.php
+│           ├── Handlers/
+│           │   ├── AlbumHandler.php
+│           │   ├── ModerationHandler.php
+│           │   └── DistributionHandler.php
+│           └── Middleware/
+│               ├── BlacklistMiddleware.php
+│               ├── SpamMiddleware.php
+│               └── UserMiddleware.php
+├── config/
+│   ├── telegram.php
+│   └── botrate.php
+├── database/migrations/
+├── resources/views/webapp/
+├── routes/
+│   ├── api.php
+│   ├── web.php
+│   └── console.php
+├── .env
+├── composer.json
+└── artisan
+```
+
+## Command
+
+| Command | Deskripsi |
+|---------|-----------|
+| `php artisan telegram:webhook set` | Setup webhook |
+| `php artisan telegram:webhook delete` | Hapus webhook |
+| `php artisan telegram:webhook info` | Info webhook |
+| `php artisan botrate:housekeeping` | Cleanup draft expired |
+
+## Alur Bot
+
+1. User kirim media → Bot simpan sebagai draft
+2. Bot forward ke group moderasi dengan info pengirim
+3. Admin klik ✅ Setuju → Post ke channel + notifikasi user
+4. Admin klik ❌ Tolak → Pilih alasan → Notifikasi user
+5. User lain klik deep link → Bot kirim media + rating keyboard
 
 ## Lisensi
 
-ISC
+MIT
