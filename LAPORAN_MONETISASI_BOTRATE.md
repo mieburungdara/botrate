@@ -1,207 +1,150 @@
-# Laporan Lengkap Sistem Monetisasi BotRate
+# Panduan Lengkap Menghasilkan Uang di BotRate
 
-## 📊 Gambaran Umum
-BotRate adalah platform konten kreator berbasis Telegram Bot dengan sistem monetisasi berbasis donasi. Sistem menggunakan dompet digital internal dengan pembagian hasil yang jelas antara kreator dan admin platform. Semua transaksi menggunakan mata uang Rupiah (IDR).
-
----
-
-## 💰 Bagaimana Kreator Menghasilkan Uang
-
-### Sumber Pendapatan Utama Kreator
-Saat ini, satu-satunya sumber pendapatan untuk kreator adalah melalui **donasi dari penonton** yang melihat konten mereka.
-
-#### Fitur Donasi:
-- Setiap konten (album/media) yang dipublikasikan dan disetujui secara otomatis memiliki tombol donasi
-- Penonton dapat memilih nominal preset:
-  - Rp 1.000
-  - Rp 5.000
-  - Rp 10.000
-  - Rp 25.000
-  - Rp 50.000
-  - Rp 100.000
-- Atau memasukkan nominal custom sesuai keinginan
-- **Batas donasi**: Minimal Rp 1.000 | Maksimal Rp 100.000.000
-
-#### Pembagian Hasil Donasi
-| Pihak | Persentase | Keterangan |
-|-------|------------|------------|
-| Kreator | 90% | Diterima otomatis ke dompet kreator |
-| Admin Platform | 10% | Fee layanan yang diambil sistem |
-
-**Contoh perhitungan**:
-> Jika penonton mendonasikan Rp 10.000:
-> - Kreator menerima: Rp 9.000
-> - Admin platform menerima: Rp 1.000
-
-### Syarat Kreator Bisa Tarik Uang
-Kreator hanya bisa melakukan penarikan saldo jika memenuhi syarat berikut:
-1. ✅ Akun sudah terverifikasi KYC (upload KTP + selfie)
-2. ✅ Saldo di dompet minimal **Rp 10.000**
-3. ✅ Tidak ada penarikan yang sedang diproses
-
-### Batas Penarikan Kreator
-- Minimal penarikan: Rp 10.000
-- Maksimal penarikan per request: Rp 10.000.000
-- Admin akan memproses penarikan secara manual
+Panduan sederhana untuk kreator dan admin, tanpa istilah teknis yang rumit.
 
 ---
 
-## 🛡️ Bagaimana Admin Mendapatkan Pendapatan
+## 💰 Untuk Kreator: Cara Mendapatkan Uang
 
-### Sumber Pendapatan Admin Platform
-Admin platform mendapatkan pendapatan dari beberapa sumber:
+### Apa yang bisa kamu dapatkan?
+Kamu menghasilkan uang ketika orang yang melihat kontenmu memberikan **donasi** sebagai bentuk apresiasi.
 
-| Sumber Pendapatan | Persentase | Keterangan |
-|-------------------|------------|------------|
-| Komisi Donasi | 10% | Sumber pendapatan utama dari setiap transaksi donasi |
-| Selisih Saldo Sistem | - | Dana yang tersisa di pool sistem dari top-up yang belum digunakan |
+### Bagaimana cara kerjanya?
+1. ✅ Kamu upload konten (foto/video/album)
+2. ✅ Admin menyetujui kontenmu
+3. ✅ Secara OTOMATIS akan muncul tombol "Donasi" di bawah kontenmu
+4. ✅ Orang yang suka kontenmu bisa mengirim uang melalui tombol itu
 
-#### Cara Kerja Pendapatan Admin:
-1. Setiap kali donasi terjadi, 10% dari nominal donasi **otomatis tetap berada di pool dana sistem**
-2. Tidak ada pemisahan eksplisit "saldo admin" di database - pendapatan admin adalah selisih antara total top-up user dan total saldo semua user
-3. Admin dapat melakukan penarikan manual dari pool dana sistem kapan saja
+### Berapa banyak yang kamu dapatkan?
+Kamu mendapatkan **90%** dari setiap donasi yang masuk.
 
-### Hak Akses Admin Terkait Monetisasi
-- ✅ Memverifikasi dan menyetujui request top-up user
-- ✅ Memproses dan menyetujui request penarikan kreator
-- ✅ Melihat seluruh riwayat transaksi di sistem
-- ✅ Melihat statistik pendapatan platform secara keseluruhan
-- ✅ Mengubah parameter sistem (fee, batas penarikan, dll)
+| Jika orang donasi | Kamu dapat | Bot dapat |
+|-------------------|------------|-----------|
+| Rp 1.000          | Rp 900     | Rp 100    |
+| Rp 10.000         | Rp 9.000   | Rp 1.000  |
+| Rp 100.000        | Rp 90.000  | Rp 10.000 |
+| Rp 1.000.000      | Rp 900.000 | Rp 100.000|
+
+> Semua perhitungan dilakukan otomatis oleh sistem, kamu tidak perlu menghitung apapun.
+
+### Bagaimana cara mencairkan uangmu?
+Kamu bisa tarik uang kapan saja jika syarat berikut terpenuhi:
+1. ✅ Akunmu sudah terverifikasi (upload KTP + foto selfie)
+2. ✅ Ada minimal **Rp 10.000** di dompetmu
+3. ✅ Kamu sudah mengisi data rekening bank
+
+### Batas tarik uang:
+- Minimal tarik: Rp 10.000
+- Maksimal tarik sekali tarik: Rp 10.000.000
+
+### Alur pencairan uang:
+1. Kamu klik "Tarik Uang" di menu dompet
+2. Masukkan jumlah yang ingin ditarik
+3. Uang di dompetmu akan terkunci sementara
+4. Admin akan memproses permintaanmu dalam 1x24 jam
+5. Uang akan dikirim ke rekening bank yang kamu daftarkan
 
 ---
 
-## 🔄 Alur Lengkap Sistem Monetisasi
+## 🛡️ Untuk Admin: Cara Mendapatkan Pendapatan
 
-```mermaid
-flowchart TD
-    A[User Top-Up Saldo] --> B[User upload bukti transfer]
-    B --> C[Admin verifikasi bukti]
-    C --> D{Verifikasi sukses?}
-    D -->|Ya| E[Saldo user bertambah]
-    D -->|Tidak| F[Top-up ditolak]
-    
-    E --> G[User buka konten kreator]
-    G --> H[User pilih nominal donasi]
-    H --> I[Cek saldo user cukup]
-    I --> J{Saldo cukup?}
-    J -->|Ya| K[Potong saldo user 100%]
-    J -->|Tidak| L[Donasi gagal]
-    
-    K --> M[Tambah saldo kreator 90%]
-    K --> N[10% tetap di pool sistem (pendapatan admin)]
-    M & N --> O[Catat transaksi]
-    O --> P[Kirim notifikasi ke user & kreator]
-    
-    Q[Kreator buat request penarikan] --> R[Saldo kreator di-lock sementara]
-    R --> S[Admin review permintaan]
-    S --> T{Disetujui?}
-    T -->|Ya| U[Admin transfer manual ke rekening kreator]
-    U --> V[Approve permintaan di sistem]
-    T -->|Tidak| W[Kembalikan saldo ke kreator]
+### Dari mana pendapatan admin?
+Admin mendapatkan uang dari **fee layanan 10%** dari setiap donasi yang terjadi di platform.
+
+### Bagaimana cara kerjanya?
+Setiap kali ada orang yang donasi ke kreator:
+- 90% langsung masuk ke dompet kreator
+- 10% otomatis menjadi pendapatan admin
+
+> Tidak perlu melakukan apapun! Sistem memotong fee secara otomatis setiap kali donasi terjadi.
+
+### Apa tugas admin terkait uang?
+1. ✅ Memverifikasi ketika orang mau isi saldo
+2. ✅ Memproses permintaan tarik uang dari kreator
+3. ✅ Melihat laporan berapa banyak pendapatan platform
+4. ✅ Mengatur batas minimal/maksimal donasi dan tarik uang
+
+### Bagaimana admin mencairkan pendapatannya?
+Admin bisa mengambil uang dari pool dana platform kapan saja, sesuai dengan jumlah akumulasi fee yang sudah terkumpul.
+
+---
+
+## 📱 Alur Lengkap Semua Proses
+
+```
+💳 Orang mau isi saldo
+    ↓
+Orang transfer uang lewat OVO/DANA/BCA/QRIS
+    ↓
+Orang upload bukti transfer
+    ↓
+Admin cek dan setujui
+    ↓
+Saldo bertambah otomatis
+
+🎁 Orang donasi ke kreator
+    ↓
+Saldo orang berkurang sesuai jumlah donasi
+    ↓
+✅ 90% masuk ke dompet kreator SECARA OTOMATIS
+    ↓
+✅ 10% masuk ke pendapatan admin SECARA OTOMATIS
+    ↓
+Keduanya dapat notifikasi bahwa donasi berhasil
+
+💸 Kreator tarik uang
+    ↓
+Kreator masukkan jumlah dan rekening
+    ↓
+Admin lihat permintaan
+    ↓
+Admin transfer uang ke rekening kreator
+    ↓
+Admin klik "setujui" di sistem
+    ↓
+Selesai!
 ```
 
 ---
 
-## ⚙️ Konfigurasi Sistem Saat Ini
+## ❓ Pertanyaan yang Sering Ditanyakan
 
-Semua parameter monetisasi diatur di file `config/botrate.php`:
+### Untuk Kreator:
+❔ Kapan uang donasi masuk ke dompet saya?
+> ✅ Langsung masuk saat itu juga, secara otomatis.
 
-```php
-<?php
+❔ Apakah ada batas maksimal donasi?
+> ✅ Orang bisa donasi sampai Rp 100 juta per kali donasi.
 
-return [
-    'donation' => [
-        'fee_percentage'    => 0.10, // 10% fee untuk admin
-        'min_amount'        => 1000, // Rp 1.000
-        'max_amount'        => 100000000, // Rp 100.000.000
-    ],
-    
-    'withdrawal' => [
-        'min_amount'        => 10000, // Rp 10.000
-        'max_amount'        => 10000000, // Rp 10.000.000
-        'processing_days'   => 1, // Proses maksimal 1 hari kerja
-    ],
-    
-    'topup' => [
-        'min_amount'        => 10000, // Rp 10.000
-        'max_amount'        => 100000000, // Rp 100.000.000
-    ],
-    
-    'verification' => [
-        'required_for_withdrawal' => true,
-    ],
-];
-```
+❔ Apakah saya bisa lihat siapa yang donasi?
+> ✅ Ya, kamu akan dapat notifikasi nama orang yang donasi.
+
+❔ Berapa lama proses tarik uang?
+> ✅ Maksimal 1 hari kerja setelah kamu ajukan permintaan.
+
+### Untuk Admin:
+❔ Apakah fee bisa diubah?
+> ✅ Ya, admin bisa mengubah persentase fee kapan saja.
+
+❔ Apakah saya harus memotong fee manual?
+> ❌ Tidak, semua dipotong otomatis oleh sistem.
+
+❔ Berapa minimal orang isi saldo?
+> ✅ Minimal Rp 10.000
 
 ---
 
-## 📂 Struktur Kode Monetisasi
+## ✅ Yang Perlu Kamu Ingat
 
-### File Utama Terkait Monetisasi:
-| Lokasi File | Fungsi |
-|-------------|--------|
-| `app/Models/Transaction.php` | Model untuk semua jenis transaksi |
-| `app/Models/Withdrawal.php` | Model untuk request penarikan |
-| `app/Models/User.php` | Model user dengan kolom `balance` |
-| `app/Http/Controllers/WalletController.php` | Endpoint dompet, topup, penarikan |
-| `app/Http/Controllers/AdminController.php` | Endpoint admin untuk verifikasi |
-| `app/Services/Telegram/Handlers/DonationHandler.php` | Logika penuh proses donasi |
-| `config/botrate.php` | Semua konfigurasi monetisasi |
+Untuk Kreator:
+- Upload konten berkualitas = lebih banyak donasi
+- Verifikasi akun terlebih dahulu sebelum bisa tarik uang
+- Selalu cek dompetmu secara berkala
 
-### Struktur Database Penting:
-
-#### Tabel `transactions`
-| Kolom | Tipe | Keterangan |
-|-------|------|------------|
-| `type` | enum | `topup` / `donation` / `withdrawal` |
-| `status` | enum | `pending` / `completed` / `failed` |
-| `from_user_id` | bigint | Pengirim dana |
-| `to_user_id` | bigint | Penerima dana |
-| `amount` | decimal | Nominal transaksi |
-| `payment_method` | string | Metode pembayaran |
-| `payment_proof` | string | Path bukti transfer |
-
-#### Tabel `users`
-| Kolom | Tipe | Keterangan |
-|-------|------|------------|
-| `balance` | decimal(15,2) | Saldo dompet user |
-| `is_verified` | boolean | Status verifikasi KYC |
-| `bank_name` | string | Nama bank untuk penarikan |
-| `bank_number` | string | Nomor rekening |
-| `bank_holder` | string | Nama pemilik rekening |
-
----
-
-## 📈 Statistik & Laporan
-
-### Laporan yang Tersedia untuk Admin:
-1. **Total pendapatan platform** (akumulasi fee 10% dari semua donasi)
-2. **Jumlah donasi per hari/minggu/bulan**
-3. **Top kreator dengan pendapatan tertinggi**
-4. **Riwayat semua transaksi** (dapat di-filter berdasarkan jenis, status, tanggal)
-5. **Daftar request penarikan yang perlu diproses**
-
----
-
-## ⚠️ Catatan Penting & Batasan Saat Ini
-
-1. **Semua proses donasi berjalan OTOMATIS** - tidak perlu intervensi admin
-2. **Top-up dan penarikan masih MANUAL** - admin harus memverifikasi setiap request satu persatu
-3. **Belum ada payment gateway otomatis** - semua transfer dilakukan manual oleh admin
-4. **Fee 10% bersifat tetap** - saat ini tidak ada sistem tier atau fee yang berbeda untuk kreator populer
-5. **Pendapatan admin tidak dicatat secara eksplisit** - hanya dapat dihitung sebagai selisih saldo sistem
-6. **Tidak ada fitur subscription atau paywall** - saat ini hanya donasi yang tersedia sebagai monetisasi
-
----
-
-## 🚀 Rekomendasi Pengembangan Mendatang
-
-Untuk meningkatkan sistem monetisasi di masa depan:
-1. Tambahkan fitur **konten berbayar (paywall)** untuk kreator
-2. Integrasikan **payment gateway otomatis** (Midtrans, Xendit) untuk top-up
-3. Tambahkan sistem **tier kreator** dengan fee yang lebih rendah untuk kreator populer
-4. Tambahkan fitur **referral program** untuk kreator
-5. Tambahkan laporan pendapatan admin yang lebih detail dan otomatis
+Untuk Admin:
+- Cek permintaan isi saldo dan tarik uang setiap hari
+- Semua transaksi tercatat dengan jelas di sistem
+- Pendapatanmu bertambah otomatis setiap ada donasi
 
 ---
 
