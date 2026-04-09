@@ -10,6 +10,8 @@ use App\Services\Telegram\Handlers\ModerationHandler;
 use App\Services\Telegram\TelegramBot;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 class AdminController extends Controller
@@ -108,30 +110,45 @@ class AdminController extends Controller
             return response()->json(['error' => 'Album not found or already processed'], 404);
         }
 
-        // Generate unique token
-        $uniqueToken = TelegramBot::generateToken();
+        DB::beginTransaction();
 
-        // Update album
-        $album->update([
-            'status' => Album::STATUS_APPROVED,
-            'unique_token' => $uniqueToken,
-            'approved_at' => now(),
-        ]);
+        try {
+            // Generate unique token
+            $uniqueToken = TelegramBot::generateToken();
 
-        // Post to channel
-        $channelMessageId = $this->postToChannel($album, $uniqueToken);
-        if ($channelMessageId) {
-            $album->update(['channel_message_id' => $channelMessageId]);
+            // Update album
+            $album->update([
+                'status' => Album::STATUS_APPROVED,
+                'unique_token' => $uniqueToken,
+                'approved_at' => now(),
+            ]);
+
+            // Post to channel
+            $channelMessageId = $this->postToChannel($album, $uniqueToken);
+            if ($channelMessageId) {
+                $album->update(['channel_message_id' => $channelMessageId]);
+            }
+
+            DB::commit();
+
+            // Notify user (outside transaction)
+            $this->notifyUserApproved($album, $uniqueToken, $channelMessageId);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Album approved successfully',
+                'share_link' => "https://t.me/" . config('telegram.bot_username') . "?start={$uniqueToken}",
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Album approval failed', [
+                'album_id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+            return response()->json(['error' => 'Failed to approve album'], 500);
         }
-
-        // Notify user
-        $this->notifyUserApproved($album, $uniqueToken, $channelMessageId);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Album approved successfully',
-            'share_link' => "https://t.me/" . config('telegram.bot_username') . "?start={$uniqueToken}",
-        ]);
     }
 
     /**
@@ -152,22 +169,36 @@ class AdminController extends Controller
             return response()->json(['error' => 'Album not found or already processed'], 404);
         }
 
-        $reasons = config('botrate.reject_reasons', []);
-        $reasonLabel = $reasons[$request->reason] ?? $request->reason;
+        DB::beginTransaction();
 
-        $album->update([
-            'status' => Album::STATUS_REJECTED,
-            'reject_reason' => $reasonLabel,
-            'rejected_at' => now(),
-        ]);
+        try {
+            $reasons = config('botrate.reject_reasons', []);
+            $reasonLabel = $reasons[$request->reason] ?? $request->reason;
 
-        // Notify user
-        $this->notifyUserRejected($album, $reasonLabel);
+            $album->update([
+                'status' => Album::STATUS_REJECTED,
+                'reject_reason' => $reasonLabel,
+                'rejected_at' => now(),
+            ]);
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Album rejected',
-        ]);
+            DB::commit();
+
+            // Notify user (outside transaction)
+            $this->notifyUserRejected($album, $reasonLabel);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Album rejected',
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Album rejection failed', [
+                'album_id' => $id,
+                'error' => $e->getMessage(),
+            ]);
+            return response()->json(['error' => 'Failed to reject album'], 500);
+        }
     }
 
     /**
@@ -199,7 +230,7 @@ class AdminController extends Controller
             'topups' => $topups->map(fn ($t) => [
                 'id' => $t->id,
                 'user_id' => $t->user_id,
-                'username' => $t->user->username,
+                'username' => $t->user?->username ?? 'N/A',
                 'amount' => $t->amount,
                 'payment_method' => $t->payment_method,
                 'payment_proof' => $t->payment_proof ? asset('storage/' . $t->payment_proof) : null,
@@ -223,11 +254,9 @@ class AdminController extends Controller
             ->where('status', Transaction::STATUS_PENDING)
             ->first();
 
-        if (!$transaction) {
-            return response()->json(['error' => 'Transaction not found or not pending'], 404);
+        if (!$transaction || !$transaction->user) {
+            return response()->json(['error' => 'Transaction not found or user missing'], 404);
         }
-
-        $user = $transaction->user;
 
         DB::beginTransaction();
 
@@ -236,27 +265,32 @@ class AdminController extends Controller
             $transaction->update(['status' => Transaction::STATUS_COMPLETED]);
 
             // Add balance to user
-            $user->increment('balance', $transaction->amount);
-            $user->refresh();
+            $transaction->user->increment('balance', $transaction->amount);
+            $transaction->user->refresh();
 
             DB::commit();
 
             // Notify user
             $this->bot->sendMessage(
-                $user->user_id,
+                $transaction->user->user_id,
                 "✅ <b>Top-up Berhasil!</b>\n\n" .
                 "💳 Nominal: RP " . number_format($transaction->amount, 0, ',', '.') . "\n" .
-                "💰 Saldo Anda sekarang: RP " . number_format($user->balance, 0, ',', '.')
+                "💰 Saldo Anda sekarang: RP " . number_format($transaction->user->balance, 0, ',', '.')
             );
 
             return response()->json([
                 'success' => true,
                 'message' => 'Top-up verified successfully',
-                'new_balance' => $user->balance,
+                'new_balance' => $transaction->user->balance,
             ]);
 
         } catch (\Exception $e) {
             DB::rollBack();
+            Log::error('Top-up verification failed', [
+                'transaction_id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
             return response()->json(['error' => 'Failed to verify top-up'], 500);
         }
     }
@@ -279,7 +313,7 @@ class AdminController extends Controller
             'withdrawals' => $withdrawals->map(fn ($w) => [
                 'id' => $w->id,
                 'user_id' => $w->user_id,
-                'username' => $w->user->username,
+                'username' => $w->user?->username ?? 'N/A',
                 'amount' => $w->amount,
                 'bank_name' => $w->bank_name,
                 'bank_number' => $w->bank_number,
@@ -303,8 +337,8 @@ class AdminController extends Controller
             ->where('status', Withdrawal::STATUS_PENDING)
             ->first();
 
-        if (!$withdrawal) {
-            return response()->json(['error' => 'Withdrawal not found or not pending'], 404);
+        if (!$withdrawal || !$withdrawal->user) {
+            return response()->json(['error' => 'Withdrawal not found or user missing'], 404);
         }
 
         DB::beginTransaction();
@@ -338,6 +372,11 @@ class AdminController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
+            Log::error('Withdrawal approval failed', [
+                'withdrawal_id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
             return response()->json(['error' => 'Failed to approve withdrawal'], 500);
         }
     }
@@ -360,8 +399,8 @@ class AdminController extends Controller
             ->where('status', Withdrawal::STATUS_PENDING)
             ->first();
 
-        if (!$withdrawal) {
-            return response()->json(['error' => 'Withdrawal not found or not pending'], 404);
+        if (!$withdrawal || !$withdrawal->user) {
+            return response()->json(['error' => 'Withdrawal not found or user missing'], 404);
         }
 
         DB::beginTransaction();
@@ -404,6 +443,10 @@ class AdminController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
+            Log::error('Withdrawal rejection failed', [
+                'withdrawal_id' => $id,
+                'error' => $e->getMessage(),
+            ]);
             return response()->json(['error' => 'Failed to reject withdrawal'], 500);
         }
     }
@@ -417,9 +460,12 @@ class AdminController extends Controller
             return response()->json(['error' => 'Forbidden'], 403);
         }
 
-        $users = User::whereNotNull('verification_notes')
-            ->orWhereNotNull('selfie_proof')
-            ->orWhereNotNull('ktp_proof')
+        $users = User::where(function($query) {
+                $query->whereNotNull('verification_notes')
+                    ->orWhereNotNull('selfie_proof')
+                    ->orWhereNotNull('ktp_proof');
+            })
+            ->where('is_verified', false)
             ->orderBy('created_at', 'desc')
             ->limit(50)
             ->get();
@@ -452,23 +498,37 @@ class AdminController extends Controller
             return response()->json(['error' => 'User not found'], 404);
         }
 
-        $user->update([
-            'is_verified' => true,
-            'verification_notes' => 'Verified by admin on ' . now()->toDateTimeString(),
-        ]);
+        DB::beginTransaction();
 
-        // Notify user
-        $this->bot->sendMessage(
-            $user->user_id,
-            "✅ <b>Verifikasi Berhasil!</b>\n\n" .
-            "Akun Anda telah terverifikasi. Anda sekarang dapat melakukan penarikan.\n\n" .
-            "Saldo Anda: RP " . number_format($user->balance, 0, ',', '.')
-        );
+        try {
+            $user->update([
+                'is_verified' => true,
+                'verification_notes' => 'Verified by admin on ' . now()->toDateTimeString(),
+            ]);
 
-        return response()->json([
-            'success' => true,
-            'message' => 'User verified successfully',
-        ]);
+            DB::commit();
+
+            // Notify user
+            $this->bot->sendMessage(
+                $user->user_id,
+                "✅ <b>Verifikasi Berhasil!</b>\n\n" .
+                "Akun Anda telah terverifikasi. Anda sekarang dapat melakukan penarikan.\n\n" .
+                "Saldo Anda: RP " . number_format($user->balance, 0, ',', '.')
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => 'User verified successfully',
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('Verification approval failed', [
+                'user_id' => $userId,
+                'error' => $e->getMessage(),
+            ]);
+            return response()->json(['error' => 'Failed to verify user'], 500);
+        }
     }
 
     /**
@@ -487,7 +547,11 @@ class AdminController extends Controller
         }
 
         $userData = json_decode($data['user'], true);
-        return $userData['id'] == config('telegram.admin_user_id');
+        if (!is_array($userData) || !isset($userData['id'])) {
+            return false;
+        }
+
+        return (int) $userData['id'] === (int) config('telegram.admin_user_id');
     }
 
     /**
