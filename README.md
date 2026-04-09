@@ -106,7 +106,6 @@ Tambahkan ke crontab:
 
 ```
 botrate/
-├── NODE_SYSTEM/              # Backup sistem Node.js (read-only)
 ├── app/
 │   ├── Console/Commands/
 │   │   ├── Housekeeping.php

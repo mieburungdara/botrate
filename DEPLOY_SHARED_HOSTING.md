@@ -1,6 +1,6 @@
 # Panduan Lengkap Deploy BotRate di Shared Hosting
 
-Dokumen ini berisi panduan langkah demi langkah untuk meng-deploy project BotRate (Laravel + Node.js) ke shared hosting standar (cPanel, DirectAdmin, Plesk, dll).
+Dokumen ini berisi panduan langkah demi langkah untuk meng-deploy project BotRate (Laravel PHP) ke shared hosting standar (cPanel, DirectAdmin, Plesk, dll).
 
 ---
 
@@ -11,7 +11,7 @@ Pastikan hosting Anda mendukung hal-hal berikut:
 - ✅ MySQL 8.0+ (atau MariaDB 10.5+)
 - ✅ Redis (wajib untuk anti-spam dan rate limiting)
 - ✅ Composer (tersedia di terminal/cPanel)
-- ✅ Node.js 18+ (untuk server.js jika diperlukan)
+
 - ✅ Akses Cron Job
 - ✅ SSL Certificate (wajib untuk Telegram Webhook)
 - ✅ Akses terminal/SSH (direkomendasikan)
@@ -33,8 +33,8 @@ composer install --no-dev --optimize-autoloader
 # 3. Generate file .env
 cp .env.example .env
 
-# 4. Build assets jika ada (jika menggunakan webapp)
-# Jika ada frontend: cd NODE_SYSTEM && npm install && npm run build
+# 4. Build assets jika ada (jika menggunakan frontend)
+# Jika ada frontend: npm install && npm run build
 ```
 
 ---
@@ -172,11 +172,7 @@ BotRate membutuhkan cron job untuk housekeeping dan tugas otomatis.
      cd /home/username/botrate && php artisan schedule:run >> /dev/null 2>&1
      ```
 
-3. (Opsional) Jika menggunakan Node.js server:
-   Tambahkan cron job untuk memastikan server berjalan:
-   ```bash
-   * * * * * cd /home/username/botrate/NODE_SYSTEM && node server.js > /dev/null 2>&1
-   ```
+
 
 ---
 
@@ -296,7 +292,7 @@ Jika hosting tidak menyediakan Redis:
 
 | Provider | Keterangan |
 |----------|------------|
-| Hostinger | Mendukung Redis, Node.js, cron |
+| Hostinger | Mendukung Redis, cron |
 | A2 Hosting | Mendukung semua fitur Laravel |
 | SiteGround | Optimasi Laravel terbaik |
 | Niagahoster | Shared hosting Indonesia dengan Redis |
@@ -305,7 +301,7 @@ Jika hosting tidak menyediakan Redis:
 
 ## 📝 Catatan Penting
 
-1. **JANGAN** upload folder `NODE_SYSTEM/node_modules` ke hosting - install di hosting saja: `cd NODE_SYSTEM && npm ci`
+1. **JANGAN** upload folder `vendor` ke hosting - install di hosting saja: `composer install --no-dev`
 2. **JANGAN** gunakan `APP_DEBUG=true` di production
 3. Selalu jalankan `php artisan config:cache` setelah mengubah .env
 4. Backup database secara rutin
