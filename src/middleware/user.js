@@ -14,8 +14,8 @@ async function userMiddleware(ctx, next) {
         let newAnonId = null;
         if (rows.length === 0 || !rows[0].anonymous_id) {
             // Generate cryptographically secure random ID
-            const randomBytes = crypto.randomBytes(5); // 5 bytes = 40 bits
-            newAnonId = 'BA-' + randomBytes.toString('hex').toUpperCase().substring(0, 9);
+            const randomBytes = crypto.randomBytes(5); // 5 bytes = 40 bits = 10 hex chars
+            newAnonId = 'BA-' + randomBytes.toString('hex').toUpperCase();
         }
 
         await db.execute(`

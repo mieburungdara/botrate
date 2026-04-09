@@ -2,7 +2,7 @@ const { verifyWebAppInitData, parseInitData } = require('../helpers/webapp');
 const db = require('../config/db');
 const crypto = require('crypto');
 
-function webAppAuthMiddleware(req, res, next) {
+async function webAppAuthMiddleware(req, res, next) {
     const authHeader = req.headers['x-telegram-init-data'];
     
     if (!authHeader) {

@@ -3,8 +3,8 @@ const LIMIT_MS = 1000; // 1 detik interval minimal (Anti-Rapid-Fire)
 const MAX_MESSAGES_PER_MINUTE = 40; // Naikkan limit untuk mendukung album (Media Group)
 
 // Validate ADMIN_USER_ID is set
-if (!process.env.ADMIN_USER_ID) {
-    throw new Error('ADMIN_USER_ID environment variable is required');
+if (!process.env.TELEGRAM_ADMIN_USER_ID) {
+    throw new Error('TELEGRAM_ADMIN_USER_ID environment variable is required');
 }
 
 /**
@@ -15,7 +15,7 @@ const spamMiddleware = async (ctx, next) => {
     if (!ctx.from) return next();
     
     // Abaikan pengecekan spam untuk admin utama
-    if (ctx.from.id == process.env.ADMIN_USER_ID) return next();
+    if (ctx.from.id == process.env.TELEGRAM_ADMIN_USER_ID) return next();
 
     const userId = ctx.from.id;
     const now = Date.now();

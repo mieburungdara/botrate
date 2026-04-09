@@ -13,7 +13,7 @@ async function blacklistMiddleware(ctx, next) {
     if (!userId) return next();
 
     // PROTEKSI: Admin kebal terhadap sistem blacklist untuk mencegah bot terkunci
-    if (userId == process.env.ADMIN_USER_ID) {
+    if (userId == process.env.TELEGRAM_ADMIN_USER_ID) {
         return next();
     }
 

@@ -205,8 +205,8 @@ async function handleSingleMedia(ctx) {
         
         // Update album_count menggunakan query yang lebih aman
         await connection.execute(
-            'UPDATE users SET album_count = (SELECT COUNT(*) FROM albums WHERE user_id = ? AND is_submitted = 1)', 
-            [userId]
+            'UPDATE users SET album_count = (SELECT COUNT(*) FROM albums WHERE user_id = ? AND status = ?)', 
+            [userId, AlbumStatus.APPROVED]
         );
 
         await connection.commit();

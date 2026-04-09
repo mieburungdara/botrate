@@ -17,7 +17,7 @@ async function handleApprove(ctx) {
     const [result] = await db.execute(`
         UPDATE albums 
         SET status = ?, approved_at = CURRENT_TIMESTAMP 
-        WHERE id = ? AND status = ? AND is_submitted = 1
+        WHERE id = ? AND status = ?
     `, [AlbumStatus.APPROVED, albumId, AlbumStatus.PENDING]);
 
     if (result.affectedRows === 0) {
@@ -89,7 +89,7 @@ async function handleRejectConfirm(ctx) {
     const [result] = await db.execute(`
         UPDATE albums 
         SET status = ?, rejected_at = CURRENT_TIMESTAMP, reject_reason = ?
-        WHERE id = ? AND status = ? AND is_submitted = 1
+        WHERE id = ? AND status = ?
     `, [AlbumStatus.REJECTED, reason, albumId, AlbumStatus.PENDING]);
 
     if (result.affectedRows === 0) {

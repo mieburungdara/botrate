@@ -25,7 +25,7 @@ const {
  * Inisialisasi admin awal dari .env jika belum ada di database.
  */
 async function initAdmin() {
-    const adminId = process.env.ADMIN_USER_ID;
+    const adminId = process.env.TELEGRAM_ADMIN_USER_ID;
     if (!adminId) return;
 
     try {
@@ -73,7 +73,7 @@ app.use('/webapp', express.static(path.join(__dirname, 'webapp')));
 // Middleware Proteksi Admin untuk API (Fix Bug 75)
 const adminApiMiddleware = (req, res, next) => {
     if (!req.user || !req.user.is_admin) {
-        console.warn(`[Security] Akses admin ilegal terdeteksi dari UserID: ${req.user ? req.user.id : 'Unknown'}`);
+        console.warn(`[Security] Akses admin ilegal terdeteksi dari UserID: ${req.user ? req.user.user_id : 'Unknown'}`);
         return res.status(403).json({ error: 'Akses ditolak. Fitur khusus Administrator.' });
     }
     next();
@@ -167,10 +167,10 @@ app.use((err, req, res, next) => {
 async function startHousekeeping() {
     console.log('[Housekeeping] Memulai pembersihan berkala draf kedaluwarsa...');
     try {
-        // 1. Hapus album yang tidak di-submit lebih dari 14 hari
+        // 1. Hapus album yang tidak di-submit lebih dari 14 hari (pending)
         const [result] = await db.execute(`
             DELETE FROM albums 
-            WHERE is_submitted = 0 AND created_at < DATE_SUB(NOW(), INTERVAL 14 DAY)
+            WHERE status = 'pending' AND created_at < DATE_SUB(NOW(), INTERVAL 14 DAY)
         `);
         
         if (result.affectedRows > 0) {
@@ -180,7 +180,7 @@ async function startHousekeeping() {
             await db.execute(`
                 UPDATE users u SET album_count = (
                     SELECT COUNT(*) FROM albums a 
-                    WHERE a.user_id = u.user_id AND a.is_submitted = 1
+                    WHERE a.user_id = u.user_id AND a.status = 'approved'
                 )
             `);
         }

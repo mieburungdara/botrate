@@ -152,9 +152,10 @@ class ModerationHandler
     {
         $callbackQueryId = $callbackQuery['id'];
 
-        // Store pending custom reject in cache
-        $cacheKey = "reject_custom:{$albumId}";
-        Cache::put($cacheKey, true, 300); // 5 minutes
+        // Store pending custom reject in cache with admin ID as key
+        $adminId = $callbackQuery['from']['id'];
+        $cacheKey = "reject_custom:{$adminId}";
+        Cache::put($cacheKey, ['album_id' => $albumId], 300); // 5 minutes
 
         // Update moderation message
         $moderationGroupId = config('telegram.moderation_group_id');
@@ -178,11 +179,18 @@ class ModerationHandler
      */
     public function handleCustomReasonText(int $adminId, string $text): void
     {
-        // Find pending custom reject
-        // We need to find which album this is for
-        // Check all pending custom rejects
-        $album = Album::pending()->first(); // Simplified - in production, track album_id in cache key
-
+        // Find pending custom reject for this specific admin
+        $cacheKey = "reject_custom:{$adminId}";
+        $cached = Cache::get($cacheKey);
+        
+        if (!$cached || !isset($cached['album_id'])) {
+            return; // No pending reject for this admin
+        }
+        
+        $albumId = $cached['album_id'];
+        
+        // Verify album still exists and is pending
+        $album = Album::where('id', $albumId)->where('status', Album::STATUS_PENDING)->first();
         if (!$album) {
             return;
         }
@@ -207,6 +215,9 @@ class ModerationHandler
         }
 
         $this->bot->sendMessage($adminId, "✅ Alasan penolakan telah disimpan.");
+        
+        // Clear cache
+        Cache::forget($cacheKey);
     }
 
     /**

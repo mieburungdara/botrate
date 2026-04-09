@@ -337,11 +337,12 @@ class TelegramBot
 
     /**
      * Generate anonymous ID.
+     * Fix: Use full 10 characters to avoid collisions (bin2hex(5) = 10 chars)
      */
     public static function generateAnonymousId(): string
     {
         $prefix = config('botrate.anonymous_prefix', 'BA-');
-        $random = bin2hex(random_bytes(5));
-        return $prefix . strtoupper(substr($random, 0, 9));
+        $random = bin2hex(random_bytes(5)); // 10 hex characters
+        return $prefix . strtoupper($random); // Use full 10 chars, not substr
     }
 }

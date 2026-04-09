@@ -8,7 +8,7 @@ const { AlbumStatus } = require('../constants/status');
 
 async function getUserProfile(req, res) {
     try {
-        const userId = req.user.id;
+        const userId = req.user.user_id;
         
         const [users] = await db.execute(
             'SELECT user_id, username, first_name, last_name, created_at, anonymous_id, is_public, is_admin FROM users WHERE user_id = ?',
@@ -27,7 +27,7 @@ async function getUserProfile(req, res) {
                 SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as rejected_albums,
                 COALESCE(SUM(download_count), 0) as total_downloads,
                 COALESCE(AVG(rating_avg), 0) as avg_rating
-            FROM albums WHERE user_id = ? AND is_submitted = 1
+            FROM albums WHERE user_id = ? AND status = 'approved'
         `, [AlbumStatus.APPROVED, AlbumStatus.REJECTED, userId]);
 
         const profileData = users[0];
@@ -37,7 +37,7 @@ async function getUserProfile(req, res) {
         res.json({
             profile: {
                 ...profileData,
-                download_count: parseInt(userStats.total_downloads), // Gunakan data aggregasi
+                download_count: parseInt(userStats.total_downloads),
                 album_count: parseInt(userStats.approved_albums)
             },
             stats: userStats
@@ -50,7 +50,7 @@ async function getUserProfile(req, res) {
 
 async function getUserAlbums(req, res) {
     try {
-        const userId = req.user.id;
+        const userId = req.user.user_id;
         const page = Math.max(1, parseInt(req.query.page) || 1);
         const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 10));
         const offset = (page - 1) * limit;
@@ -60,7 +60,7 @@ async function getUserAlbums(req, res) {
                 id, caption, status, download_count, rating_avg, rating_count, 
                 created_at, approved_at, media_items, message_ids, unique_token
             FROM albums 
-            WHERE user_id = ? AND is_submitted = 1
+            WHERE user_id = ? AND status = 'approved'
             ORDER BY created_at DESC
             LIMIT ? OFFSET ?
         `, [userId, limit, offset]);
@@ -76,8 +76,8 @@ async function getUserAlbums(req, res) {
         });
 
         const [totalRows] = await db.execute(
-            'SELECT COUNT(*) as total FROM albums WHERE user_id = ? AND is_submitted = 1',
-            [userId]
+            'SELECT COUNT(*) as total FROM albums WHERE user_id = ? AND status = ?',
+            [userId, AlbumStatus.APPROVED]
         );
 
         res.json({
@@ -93,13 +93,13 @@ async function getUserAlbums(req, res) {
 
 async function getUserPendingMedia(req, res) {
     try {
-        const userId = req.user.id;
-        const [rows] = await db.execute(`
-            SELECT id, caption, created_at, media_items, message_ids
-            FROM albums 
-            WHERE user_id = ? AND is_submitted = 0
-            ORDER BY created_at DESC
-        `, [userId]);
+        const userId = req.user.user_id;
+    const [rows] = await db.execute(`
+        SELECT id, caption, created_at, media_items, message_ids
+        FROM albums 
+        WHERE user_id = ? AND status IN ('draft', 'pending')
+        ORDER BY created_at DESC
+    `, [userId]);
 
         const processed = rows.map(album => {
             let media_count = 0;
@@ -118,7 +118,7 @@ async function getUserPendingMedia(req, res) {
 
 async function submitMedia(req, res) {
     try {
-        const userId = req.user.id;
+        const userId = req.user.user_id;
         const albumId = req.params.id;
         
         // Input validation for albumId
@@ -127,7 +127,7 @@ async function submitMedia(req, res) {
         }
         
         const [rows] = await db.execute(
-            "SELECT id, user_id, status, is_submitted FROM albums WHERE id = ? AND user_id = ?", 
+            "SELECT id, user_id, status FROM albums WHERE id = ? AND user_id = ?", 
             [albumId, userId]
         );
 
@@ -136,7 +136,7 @@ async function submitMedia(req, res) {
         }
 
         const album = rows[0];
-        if (album.status !== 'draft' || album.is_submitted === 1) {
+        if (album.status !== 'pending' && album.status !== 'draft') {
             return res.status(400).json({ error: 'Media sudah dikirim atau sudah diproses' });
         }
 
@@ -153,7 +153,7 @@ async function submitMedia(req, res) {
 
 async function updateMediaCaption(req, res) {
     try {
-        const userId = req.user.id;
+        const userId = req.user.user_id;
         const albumId = req.params.id;
         const { caption } = req.body;
 
@@ -162,11 +162,11 @@ async function updateMediaCaption(req, res) {
             return res.status(400).json({ error: 'ID album tidak valid' });
         }
 
-        const [rows] = await db.execute('SELECT id, user_id, is_submitted FROM albums WHERE id = ?', [albumId]);
+        const [rows] = await db.execute('SELECT id, user_id, status FROM albums WHERE id = ?', [albumId]);
         if (rows.length === 0 || rows[0].user_id != userId) {
             return res.status(403).json({ error: 'Akses ditolak' });
         }
-        if (rows[0].is_submitted) {
+        if (rows[0].status !== 'pending' && rows[0].status !== 'draft') {
             return res.status(400).json({ error: 'Tidak bisa mengubah media yang sedang dimoderasi' });
         }
 
@@ -179,7 +179,7 @@ async function updateMediaCaption(req, res) {
 
 async function getAlbumDownloadStats(req, res) {
     try {
-        const userId = req.user.id;
+        const userId = req.user.user_id;
         const albumId = req.params.id;
 
         // Input validation for albumId
@@ -211,44 +211,39 @@ async function getAlbumDownloadStats(req, res) {
     }
 }
 
-async function updateMediaCaption(req, res) {
+async function updateUserSettings(req, res) {
     try {
-        const userId = req.user.id;
-        const albumId = req.params.id;
-        const { caption } = req.body;
-
-        const [rows] = await db.execute('SELECT id, user_id, is_submitted FROM albums WHERE id = ?', [albumId]);
-        if (rows.length === 0 || rows[0].user_id != userId) {
-            return res.status(403).json({ error: 'Akses ditolak' });
-        }
-        if (rows[0].is_submitted) {
-            return res.status(400).json({ error: 'Tidak bisa mengubah media yang sedang dimoderasi' });
-        }
-
-        await db.execute('UPDATE albums SET caption = ? WHERE id = ?', [caption, albumId]);
+        const userId = req.user.user_id;
+        const { is_public } = req.body;
+        await db.execute('UPDATE users SET is_public = ? WHERE user_id = ?', [is_public ? 1 : 0, userId]);
         res.json({ success: true });
     } catch (error) {
-        res.status(500).json({ error: 'Gagal update caption' });
+        res.status(500).json({ error: 'Internal server error' });
     }
 }
 
 async function deleteAlbum(req, res) {
     try {
-        const userId = req.user.id;
+        const userId = req.user.user_id;
         const albumId = req.params.id;
+
+        // Input validation for albumId
+        if (!albumId || !/^\d+$/.test(albumId)) {
+            return res.status(400).json({ error: 'ID album tidak valid' });
+        }
 
         const [rows] = await db.execute('SELECT id, status FROM albums WHERE id = ? AND user_id = ?', [albumId, userId]);
         if (rows.length === 0) {
             return res.status(404).json({ error: 'Media tidak ditemukan' });
         }
 
-        if (rows[0].status === 'pending') {
-            return res.status(400).json({ error: 'Tidak dapat menghapus media yang sedang dalam proses moderasi. Tunggu admin memberikan keputusan.' });
+        if (rows[0].status !== 'pending') {
+            return res.status(400).json({ error: 'Tidak dapat menghapus media yang sudah diproses. Hanya media pending yang bisa dihapus.' });
         }
 
         // Hapus media dan kurangi penghitung secara seirama (Fix Bug 94)
         await db.execute('DELETE FROM albums WHERE id = ?', [albumId]);
-        await db.execute('UPDATE users SET album_count = GREATEST(album_count - 1, 0) WHERE user_id = ?', [userId]);
+        await db.execute('UPDATE users SET album_count = (SELECT COUNT(*) FROM albums WHERE user_id = ? AND status = ?)', [userId, AlbumStatus.APPROVED]);
         
         res.json({ success: true });
     } catch (error) {
@@ -256,38 +251,9 @@ async function deleteAlbum(req, res) {
     }
 }
 
-async function getAlbumDownloadStats(req, res) {
-    try {
-        const userId = req.user.id;
-        const albumId = req.params.id;
-
-        const [albumRows] = await db.execute('SELECT id FROM albums WHERE id = ? AND user_id = ?', [albumId, userId]);
-        if (albumRows.length === 0) {
-            return res.status(404).json({ error: 'Media tidak ditemukan' });
-        }
-
-        const [stats] = await db.execute(`
-            SELECT u.anonymous_id, u.is_public, d.downloaded_at
-            FROM downloads d
-            LEFT JOIN users u ON d.user_id = u.user_id
-            WHERE d.album_id = ?
-            ORDER BY d.downloaded_at DESC
-        `, [albumId]);
-
-        const maskedStats = stats.map(s => ({
-            downloaded_at: s.downloaded_at,
-            anonymous_id: s.is_public ? (s.anonymous_id || "Pengguna Anonim") : "Pengguna Anonim"
-        }));
-
-        res.json({ stats: maskedStats });
-    } catch (error) {
-        res.status(500).json({ error: 'Gagal memuat statistik unduhan' });
-    }
-}
-
 async function getGlobalStats(req, res) {
     try {
-        const [admins] = await db.execute('SELECT is_admin FROM users WHERE user_id = ?', [req.user.id]);
+        const [admins] = await db.execute('SELECT is_admin FROM users WHERE user_id = ?', [req.user.user_id]);
         if (!admins[0]?.is_admin) return res.status(403).json({ error: 'Forbidden' });
 
         const [userCount] = await db.execute('SELECT COUNT(*) as total FROM users');
@@ -297,7 +263,7 @@ async function getGlobalStats(req, res) {
                 SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) as approved_albums,
                 SUM(download_count) as total_downloads,
                 IFNULL(ROUND(SUM(rating_total) / NULLIF(SUM(rating_count), 0), 2), 0) as global_avg_rating
-            FROM albums WHERE is_submitted = 1 AND status = 'approved'
+            FROM albums WHERE status = 'approved'
         `);
 
         res.json({
@@ -310,47 +276,6 @@ async function getGlobalStats(req, res) {
     } catch (error) {
         res.status(500).json({ error: 'Internal server error' });
     }
-}
-
-async function updateUserSettings(req, res) {
-    try {
-        const userId = req.user.id;
-        const { is_public } = req.body;
-        await db.execute('UPDATE users SET is_public = ? WHERE user_id = ?', [is_public ? 1 : 0, userId]);
-        res.json({ success: true });
-    } catch (error) {
-        res.status(500).json({ error: 'Internal server error' });
-    }
-}
-
-async function deleteAlbum(req, res) {
-    try {
-        const userId = req.user.id;
-        const albumId = req.params.id;
-
-        // Input validation for albumId
-        if (!albumId || !/^\d+$/.test(albumId)) {
-            return res.status(400).json({ error: 'ID album tidak valid' });
-        }
-
-        const [rows] = await db.execute('SELECT id, status FROM albums WHERE id = ? AND user_id = ?', [albumId, userId]);
-        if (rows.length === 0) {
-            return res.status(404).json({ error: 'Media tidak ditemukan' });
-        }
-
-        if (rows[0].status === 'pending') {
-            return res.status(400).json({ error: 'Tidak dapat menghapus media yang sedang dalam proses moderasi. Tunggu admin memberikan keputusan.' });
-        }
-
-        // Hapus media dan kurangi penghitung secara seirama (Fix Bug 94)
-        await db.execute('DELETE FROM albums WHERE id = ?', [albumId]);
-        await db.execute('UPDATE users SET album_count = (SELECT COUNT(*) FROM albums WHERE user_id = ? AND is_submitted = 1)', [userId]);
-        
-        res.json({ success: true });
-    } catch (error) {
-        res.status(500).json({ error: 'Gagal menghapus media' });
-    }
-}
 }
 
 async function searchAlbumsByAnonId(req, res) {
@@ -383,7 +308,7 @@ async function searchAlbumsByAnonId(req, res) {
         const [albums] = await db.execute(`
             SELECT id, caption, download_count, rating_avg, rating_count, created_at, media_items, unique_token
             FROM albums 
-            WHERE user_id = ? AND status = 'approved' AND is_submitted = 1
+            WHERE user_id = ? AND status = 'approved'
             ORDER BY created_at DESC
         `, [targetUserId]);
 

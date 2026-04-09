@@ -20,7 +20,7 @@ async function submitToModeration(albumId) {
         }
 
         const album = rows[0];
-        if (album.is_submitted) {
+        if (album.status !== 'draft' && album.status !== 'pending') {
             await connection.rollback();
             return { success: false, error: 'Media sudah dikirim ke moderasi' };
         }
@@ -108,9 +108,9 @@ async function submitToModeration(albumId) {
         }
 
         // 1. TANDAI SEBAGAI PROSES KIRIM SECARA ATOMIK (Fix Bug 92)
-        // Gunakan kondisi 'is_submitted = 0' untuk mencegah race condition (dobel klik)
+        // Gunakan kondisi status untuk mencegah race condition (dobel klik)
         const [lockResult] = await connection.execute(
-            "UPDATE albums SET is_submitted = 1 WHERE id = ? AND is_submitted = 0 AND status = 'draft'",
+            "UPDATE albums SET status = 'pending' WHERE id = ? AND status IN ('draft', 'pending')",
             [albumId]
         );
 
